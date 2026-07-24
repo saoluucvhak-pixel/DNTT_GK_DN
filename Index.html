@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; padding: 15px; color: #333; }
+    .menu-header { color: #004a99; font-weight: 800; text-align: center; font-size: 20px; text-transform: uppercase; margin-bottom: 20px; border-bottom: 3px solid #004a99; padding-bottom: 10px; letter-spacing: 1px; }
+    
+    /* Button Styles */
+    .btn-hak { font-weight: bold; padding: 10px; border: none; border-radius: 8px; color: white !important; transition: all 0.3s ease; margin-bottom: 5px; display: flex; align-items: center; justify-content: center; min-height: 48px; line-height: 1.2; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .btn-hak:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    .btn-hak:active { transform: translateY(0); }
+    
+    .btn-main { background: linear-gradient(135deg, #0d6efd, #0a58ca); }
+    .btn-view { background: linear-gradient(135deg, #6f42c1, #59359a); }
+    .btn-print { background: linear-gradient(135deg, #dc3545, #b02a37); }
+    .btn-report { background: linear-gradient(135deg, #198754, #146c43); border: 1px solid #fff; }
+    .btn-payment { background: linear-gradient(135deg, #ffc107, #ff9800); color: #000 !important; font-weight: 800 !important; border: 1px solid #d39e00; }
+
+    /* Table Card */
+    .table-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.05); border: 1px solid #e1e4e8; }
+    thead th { background-color: #004a99 !important; color: white !important; text-align: center; vertical-align: middle; white-space: nowrap; border: 1px solid #dee2e6; font-size: 10px; text-transform: uppercase; }
+    #vTitle { color: #004a99; font-weight: bold; text-transform: uppercase; margin: 0; display: flex; align-items: center; }
+    #vTitle::before { content: "\f0ca"; font-family: "Font Awesome 6 Free"; margin-right: 10px; }
+
+    /* Loader */
+    #loader { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; }
+    .spinner-border { width: 3rem; height: 3rem; }
+    
+    .tfoot-sum { background-color: #f8f9fa; font-weight: bold; color: #d00; border-top: 2px solid #333; }
+    .form-control-sm { border-radius: 6px; border: 1px solid #ced4da; }
+
+    @media print {
+      @page { size: A4 landscape; margin: 10mm 5mm; }
+      body { background-color: white; padding: 0; margin: 0; font-size: 9px; } 
+      .no-print, .filter-controls, .btn-hak, #vTitle, #loader, .menu-header { display: none !important; }
+      #printHeader, #printFooter { display: block !important; }
+      table { width: 100% !important; border-collapse: collapse; border: 1px solid #000 !important; }
+      td, th { border: 1px solid #000 !important; padding: 3px !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="spinner-border text-primary" role="status"></div>
+  <b class="mt-3" id="loaderText" style="font-size: 14px; color: #004a99;">Đang xử lý dữ liệu...</b>
+</div>
+
+<div id="printHeader" style="display: none;">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;">
+    <div style="text-align: left;"><h6 style="margin: 0; font-weight: bold;">HOÀNG ANH KHÔI ĐÀ NẴNG</h6></div>
+    <div style="text-align: right;"><p style="margin: 0; font-size: 9px;" id="printTimeNow"></p></div>
+  </div>
+  <div style="text-align: center; margin-bottom: 10px;">
+    <h5 style="margin: 0; font-weight: bold; text-transform: uppercase;">BẢNG TỔNG HỢP ĐỀ NGHỊ THANH TOÁN</h5>
+    <p id="printSubTitle" style="margin: 2px 0; font-weight: bold; font-size: 10px;"></p>
+  </div>
+</div>
+
+<div class="menu-header no-print">HỆ THỐNG QUẢN LÝ THANH TOÁN CÔNG NỢ GỖ KEO - HAK BÀ NÀ - TP ĐÀ NẴNG</div>
+
+<div class="container-fluid">
+  <div class="row g-2 mb-3 text-center no-print">
+    <div class="col-md-2"><button onclick="showMainView()" class="btn-hak btn-main w-100"><i class="fas fa-file-invoice-dollar me-2"></i>1. ĐỀ NGHỊ THANH TOÁN</button></div>
+    <div class="col-md-2"><button onclick="show112View()" class="btn-hak btn-view w-100"><i class="fas fa-list-check me-2"></i>2. LẬP ĐỀ NGHỊ THANH TOÁN</button></div>
+    <div class="col-md-2" id="btnPrintArea" style="display:none;"><button onclick="window.print()" class="btn-hak btn-print w-100"><i class="fas fa-print me-2"></i>3. IN BẢNG</button></div>
+    <div class="col-md-2" id="btnReportArea" style="display:none;"><button onclick="handleCreateReportWeb()" class="btn-hak btn-report w-100"><i class="fas fa-file-excel me-2"></i>4. XUẤT BÁO CÁO</button></div>
+    <div class="col-md-2" id="btnPaymentArea" style="display:none;"><button onclick="handleConfirmPaymentWeb()" class="btn-hak btn-payment w-100"><i class="fas fa-shield-check me-2"></i>5. CHỐT & KHÓA</button></div>
+  </div>
+
+  <div class="table-card">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
+        <h6 id="vTitle" class="no-print">DANH SÁCH ĐỀ NGHỊ</h6>
+        <div id="filterArea" class="filter-controls no-print">
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+              <b>Từ:</b> <input type="date" id="fromDate" class="form-control form-control-sm" style="width:135px">
+              <b>Đến:</b> <input type="date" id="toDate" class="form-control form-control-sm" style="width:135px">
+              <span id="extraFilters"></span>
+              <button class="btn btn-sm btn-primary px-3" onclick="loadData()"><i class="fa fa-sync-alt"></i> Tải dữ liệu</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="resetFilter()">Làm mới</button>
+          </div>
+        </div>
+    </div>
+    
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered table-hover align-middle" id="mainTable">
+        <thead id="tH"></thead>
+        <tbody id="tB"></tbody>
+        <tfoot id="tF" class="tfoot-sum"></tfoot>
+      </table>
+    </div>
+
+    <div id="printFooter" style="display: none; margin-top: 25px;">
+      <div style="display: flex; justify-content: space-around; text-align: center; font-weight: bold;">
+        <div style="width: 33%;">Người duyệt<br><br><br><br><span style="font-weight: normal;">(Ký, ghi rõ họ tên)</span></div>
+        <div style="width: 33%;">Kế toán<br><br><br><br><span style="font-weight: normal;">(Ký, ghi rõ họ tên)</span></div>
+        <div style="width: 33%;">Người đề nghị<br><br><br><br><span style="font-weight: normal;">(Ký, ghi rõ họ tên)</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let isView112 = false;
+  let rawData = [];
+  let currentFilteredData = [];
+
+  window.onload = () => { 
+    setDefaultDates();
+    showMainView(); 
+  };
+
+  function setDefaultDates() {
+    const now = new Date();
+    const toDate = new Date(now);
+    const fromDate = new Date(now);
+    fromDate.setDate(now.getDate() - 2); // Mặc định 3 ngày gần nhất
+    
+    const f = (d) => d.toISOString().split('T')[0];
+    document.getElementById('fromDate').value = f(fromDate);
+    document.getElementById('toDate').value = f(toDate);
+  }
+
+  function showMainView() {
+    isView112 = false;
+    toggleExtraButtons(false);
+    loadData();
+  }
+
+  function show112View() {
+    isView112 = true;
+    toggleExtraButtons(true);
+    loadData();
+  }
+
+  function toggleExtraButtons(show) {
+    const areas = ['btnPrintArea', 'btnReportArea', 'btnPaymentArea'];
+    areas.forEach(id => document.getElementById(id).style.display = show ? 'block' : 'none');
+  }
+
+  function loadData() {
+    const fDate = document.getElementById('fromDate').value;
+    const tDate = document.getElementById('toDate').value;
+    showLoading(true, "Đang truy vấn dữ liệu từ máy chủ...");
+    
+    const serverFunc = isView112 ? "get112ViewData" : "getMainTableData";
+    document.getElementById('vTitle').innerText = isView112 ? "TỔNG HỢP THANH TOÁN CHUYỂN KHOẢN CÔNG NỢ GỖ KEO" : "TỔNG HỢP ĐỀ NGHỊ THANH TOÁN";
+    
+    google.script.run.withSuccessHandler(data => {
+      rawData = data || [];
+      currentFilteredData = [...rawData];
+      createSearchableDropdown(rawData, isView112 ? 'lan' : 'khach');
+      renderTable(currentFilteredData);
+      showLoading(false);
+    }).withFailureHandler(err => {
+      showLoading(false);
+      alert("Lỗi tải dữ liệu: " + err);
+    })[serverFunc](fDate, tDate); 
+  }
+
+  function applyFilter() {
+    const extraVal = isView112 ? document.getElementById('filterLan')?.value : document.getElementById('filterKhach')?.value;
+    currentFilteredData = rawData.filter(r => {
+      return !extraVal || (isView112 ? String(r.soLan) === String(extraVal) : r.chuRung === extraVal);
+    });
+    renderTable(currentFilteredData);
+    updatePrintInfo();
+  }
+
+  // TỐI ƯU HIỆU SUẤT VẼ BẢNG
+  function renderTable(data) {
+    const tbody = document.getElementById('tB');
+    const fragment = document.createDocumentFragment();
+    
+    if (isView112) {
+      document.getElementById('tH').innerHTML = `<tr><th>STT</th><th>Ngày ĐN</th><th>Lần</th><th>Chủ rừng</th><th>Người nhận</th><th>STK</th><th>NH</th><th>KL (Tấn)</th><th>Số Tiền</th><th>Nội dung CK</th><th>Ghi chú</th></tr>`;
+      let totalM = 0, totalK = 0;
+      data.forEach((r, i) => {
+        totalM += Number(r.soTien || 0);
+        totalK += Number(r.klTan || 0);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="text-center">${i + 1}</td><td class="text-center">${r.ngayDN}</td><td class="text-center">${r.soLan}</td><td><b>${r.chuRung}</b></td><td>${r.nguoiNhan}</td><td>${r.stk}</td><td>${r.nganHang}</td><td class="text-end fw-bold">${Number(r.klTan).toLocaleString('en-US',{minimumFractionDigits:2})}</td><td class="text-end text-danger fw-bold">${Number(r.soTien).toLocaleString()}</td><td><small>${r.noiDungCK}</small></td><td><small>${r.ghiChu}</small></td>`;
+        fragment.appendChild(tr);
+      });
+      document.getElementById('tF').innerHTML = `<tr><td colspan="7" class="text-end">TỔNG CỘNG:</td><td class="text-end">${totalK.toLocaleString('en-US',{minimumFractionDigits:2})}</td><td class="text-end text-danger">${totalM.toLocaleString()}</td><td colspan="2"></td></tr>`;
+    } else {
+      document.getElementById('tH').innerHTML = `<tr><th>STT</th><th>Ngày ĐN</th><th>Người ĐN</th><th>Chủ rừng</th><th>Người nhận</th><th>STK</th><th>KL</th><th>Số HĐ</th><th>Lập ĐNTT</th><th>Trạng thái</th></tr>`;
+      document.getElementById('tF').innerHTML = "";
+      data.forEach((r, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="text-center">${i+1}</td><td class="text-center">${r.ngayDN}</td><td>${r.nguoiDN}</td><td><b>${r.chuRung}</b></td><td>${r.nguoiNhan}</td><td>${r.stk}</td><td class="text-end">${r.kl}</td><td class="text-center">${r.soHD}</td><td class="text-center text-primary fw-bold">${r.lapDNTT || ""}</td><td class="text-center">${r.trangThaiTT}</td>`;
+        fragment.appendChild(tr);
+      });
+    }
+    tbody.innerHTML = "";
+    if (!data.length) tbody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-muted">Không có dữ liệu phù hợp điều kiện lọc</td></tr>';
+    else tbody.appendChild(fragment);
+  }
+
+  function handleConfirmPaymentWeb() {
+    // 1. Kiểm tra dữ liệu hiện tại trên bảng Web
+    if (!currentFilteredData || !currentFilteredData.length) {
+      return alert("⚠️ Không có dữ liệu hiển thị để chốt. Vui lòng tải dữ liệu hoặc kiểm tra lại bộ lọc!");
+    }
+
+    // 2. Tính toán thông số để xác nhận
+    const totalMoney = currentFilteredData.reduce((s, r) => s + Number(r.soTien || 0), 0);
+    const totalKL = currentFilteredData.reduce((s, r) => s + Number(r.klTan || 0), 0);
+    const customers = new Set(currentFilteredData.map(r => r.chuRung));
+
+    const confirmMsg = `📊 XÁC NHẬN CHỐT THANH TOÁN:
+----------------------------------
+📂 Tổng số hồ sơ: ${currentFilteredData.length}
+👤 Số khách hàng: ${customers.size}
+⚖️ Tổng khối lượng: ${totalKL.toLocaleString('en-US', {minimumFractionDigits:2})} Tấn
+💰 Tổng số tiền: ${totalMoney.toLocaleString()} VNĐ
+----------------------------------
+⚠️ Hệ thống sẽ GHI ĐÈ trạng thái 'Đóng TT' và KHÓA toàn bộ phiếu cân liên quan. Bạn chắc chắn muốn thực hiện?`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    // 3. Lấy ngày thanh toán
+    const pDate = prompt("📅 Nhập ngày thanh toán (dd/mm/yyyy):", new Date().toLocaleDateString('vi-VN'));
+    if (!pDate) return;
+
+    // 4. Lấy danh sách ID hệ thống từ dữ liệu đang hiển thị
+    const ids = currentFilteredData.map(r => r.idHeThong);
+
+    // 5. Gọi Server xử lý
+    showLoading(true, "Hệ thống đang chốt dữ liệu trên 4 bảng... Vui lòng không đóng trình duyệt!");
+
+    google.script.run
+      .withSuccessHandler(res => {
+        showLoading(false);
+        alert(res); // Hiển thị thông báo thành công từ Server
+        loadData(); // Tải lại bảng để cập nhật trạng thái mới (Y)
+      })
+      .withFailureHandler(err => {
+        showLoading(false);
+        console.error(err);
+        alert("❌ Lỗi kết nối máy chủ: " + err.toString());
+      })
+      .runConfirmPayment(ids, pDate);
+  }
+
+  function handleCreateReportWeb() {
+    if (!currentFilteredData.length) return alert("Hãy lọc dữ liệu trước khi xuất báo cáo!");
+    showLoading(true, "Đang khởi tạo File Báo cáo & Sheet chi tiết...");
+    const range = document.getElementById('fromDate').value + " đến " + document.getElementById('toDate').value;
+    google.script.run.withSuccessHandler(res => {
+      showLoading(false);
+      if (res.success) window.open(res.url, '_blank');
+      else alert("Lỗi báo cáo: " + res.message);
+    }).createFinalReportFromFilteredData(currentFilteredData, range);
+  }
+
+  function createSearchableDropdown(data, type) {
+    const extra = document.getElementById('extraFilters');
+    if (type === 'khach') {
+      const list = [...new Set(data.map(item => item.chuRung))].filter(Boolean).sort();
+      let h = `<b>Khách:</b> <input list="khachList" id="filterKhach" onchange="applyFilter()" class="form-control form-control-sm" style="width:180px" placeholder="Tìm tên khách..."><datalist id="khachList">`;
+      list.forEach(kh => h += `<option value="${kh}">`);
+      extra.innerHTML = h + `</datalist>`;
+    } else {
+      const list = [...new Set(data.map(item => item.soLan))].filter(Boolean).sort((a,b) => a-b);
+      let h = `<b>Lần:</b> <select id="filterLan" onchange="applyFilter()" class="form-control form-control-sm" style="width:90px"><option value="">Tất cả</option>`;
+      list.forEach(lan => h += `<option value="${lan}">${lan}</option>`);
+      extra.innerHTML = h + `</select>`;
+    }
+  }
+
+  function updatePrintInfo() {
+    const fs = document.getElementById('fromDate').value.split('-').reverse().join('/');
+    const ts = document.getElementById('toDate').value.split('-').reverse().join('/');
+    document.getElementById('printSubTitle').innerText = `Kỳ thanh toán từ: ${fs} - Đến: ${ts}`;
+    document.getElementById('printTimeNow').innerText = "Thời điểm in: " + new Date().toLocaleString('vi-VN');
+  }
+
+  function resetFilter() {
+    setDefaultDates();
+    loadData();
+  }
+
+  function showLoading(show, text) {
+    document.getElementById('loader').style.display = show ? 'flex' : 'none';
+    if (text) document.getElementById('loaderText').innerText = text;
+  }
+</script>
+</body>
+</html>
