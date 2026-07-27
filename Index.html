@@ -1774,8 +1774,12 @@ function renderDebt(){
   if (!state.debtFrom) state.debtFrom = isoDaysAgoVN(90);
   if (!state.debtTo) state.debtTo = todayISOVN();
   if (!state.ctcnNgay) state.ctcnNgay = isoDaysAgoVN(1); // mục 11: mặc định "hôm qua" (khớp snapshot 15h)
+  // SỬA (theo yêu cầu): Phân Tích NG-ĐL có bộ lọc RIÊNG - mặc định ĐẦU
+  // THÁNG hiện tại -> HÔM NAY, khác với các tab khác (3 tháng gần nhất).
+  if (!state.phanTichTo) state.phanTichTo = todayISOVN();
+  if (!state.phanTichFrom) state.phanTichFrom = firstDayOfMonthStr(state.phanTichTo);
 
-  const showRangeFilter = ['customer','contract','analysis','phantich'].includes(state.debtTab);
+  const showRangeFilter = ['customer','contract','analysis'].includes(state.debtTab);
   const c = document.getElementById('content');
   c.innerHTML = `
     <div class="subtabs">
@@ -1795,6 +1799,15 @@ function renderDebt(){
       </div>
       <div class="hint-text" style="margin-top:6px">"Trong kỳ" giới hạn tối đa ~3 tháng để tải nhanh hơn; số dư/lũy kế vẫn tính đủ đến "Đến ngày" như bình thường.</div>
     </div>` : ''}
+    ${state.debtTab === 'phantich' ? `
+    <div class="card">
+      <div class="grid cols-3">
+        <div class="field"><label>Đến ngày</label><input type="date" id="pt-to" value="${esc(state.phanTichTo)}"></div>
+        <div class="field"><label>Từ ngày (khóa = đầu tháng của "Đến ngày")</label><input type="date" id="pt-from" value="${esc(state.phanTichFrom)}" disabled></div>
+        <div class="field" style="display:flex; align-items:flex-end"><button class="btn primary" onclick="loadDebtTab()">🔍 Xem</button></div>
+      </div>
+      <div class="hint-text" style="margin-top:6px">"Từ ngày" bị khóa, luôn tự động = ngày 1 đầu tháng của "Đến ngày" - chỉ cần chọn "Đến ngày" là đủ.</div>
+    </div>` : ''}
     <div id="debt-body"></div>`;
 
   document.querySelectorAll('.subtab').forEach(el => {
@@ -1802,7 +1815,21 @@ function renderDebt(){
     el.addEventListener('click', () => { state.debtTab = el.dataset.t; renderDebt(); });
   });
 
+  if (state.debtTab === 'phantich') {
+    const ptTo = document.getElementById('pt-to'), ptFrom = document.getElementById('pt-from');
+    ptTo.addEventListener('change', () => {
+      ptFrom.value = firstDayOfMonthStr(ptTo.value);
+    });
+  }
+
   loadDebtTab();
+}
+
+/** Ngày đầu tháng (dạng yyyy-MM-dd) của 1 ngày cho trước - dùng để tự
+ * động khóa "Từ ngày" theo "Đến ngày" ở tab Phân Tích NG-ĐL. */
+function firstDayOfMonthStr(dateStr){
+  const d = new Date(dateStr + "T00:00:00");
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
 }
 
 function loadDebtTab(){
@@ -1811,6 +1838,11 @@ function loadDebtTab(){
     clampDateRange('debt-from', 'debt-to');
     state.debtFrom = fromEl.value;
     state.debtTo = toEl.value;
+  }
+  const ptFromEl = document.getElementById('pt-from'), ptToEl = document.getElementById('pt-to');
+  if (ptFromEl && ptToEl) {
+    state.phanTichFrom = ptFromEl.value;
+    state.phanTichTo = ptToEl.value;
   }
   state.debtCustomerPage = 1; state.debtContractPage = 1;
 
@@ -2049,7 +2081,7 @@ function loadPaymentAnalysis(){
 function loadPhanTichNhapTT(){
   const body = document.getElementById('debt-body');
   body.innerHTML = '<div class="card"><div class="empty"><div class="ic">⏳</div>Đang tải...</div></div>';
-  call('getPhanTichNhapTTReport', [state.debtFrom, state.debtTo], 'Đang tổng hợp Nhập/Thanh Toán theo NG-ĐL...').then(report => {
+  call('getPhanTichNhapTTReport', [state.phanTichFrom, state.phanTichTo], 'Đang tổng hợp Nhập/Thanh Toán theo NG-ĐL...').then(report => {
     state.phanTichReport = report;
     renderPhanTichNhapTTTable();
   });
@@ -2096,11 +2128,11 @@ function renderPhanTichNhapTTTable(){
 }
 
 function doExportPhanTich(){
-  call('exportPhanTichNhapTTBaoCao', [state.debtFrom, state.debtTo], 'Đang xuất báo cáo Excel + PDF...').then(res => {
+  call('exportPhanTichNhapTTBaoCao', [state.phanTichFrom, state.phanTichTo], 'Đang xuất báo cáo Excel + PDF...').then(res => {
     if (res && res.success) {
       openModal(`<div class="modal-head"><h3>Xuất báo cáo thành công</h3><button class="x" onclick="closeModal()">&times;</button></div>
         <div class="modal-body">
-          <p>Báo cáo tổng hợp từ ${esc(state.debtFrom)} đến ${esc(state.debtTo)} đã được tạo.</p>
+          <p>Báo cáo tổng hợp từ ${esc(state.phanTichFrom)} đến ${esc(state.phanTichTo)} đã được tạo.</p>
           <a href="${res.excelUrl}" target="_blank"><button class="btn primary" style="width:100%;margin-bottom:8px">📊 Mở file Excel</button></a>
           <a href="${res.pdfUrl}" target="_blank"><button class="btn" style="width:100%">📄 Mở file PDF</button></a>
         </div>
@@ -2257,6 +2289,7 @@ function renderSettings(){
         <button class="btn" style="margin-top:8px" onclick="doSetup10MinTrigger()">⏱️ Bật Tự Động 10 Phút (Phiếu Cân, Hợp Đồng, 7:30-19:00)</button>
         <button class="btn" style="margin-top:8px" onclick="doSetupDaily15hTrigger()">⏱️ Bật Tự Động 15h (Phân Tích NG-ĐL + Chi Tiết Công Nợ PC)</button>
         <button class="btn" style="margin-top:8px" onclick="doResetPhanTich()">🧹 Xóa Sạch &amp; Nạp Lại Phân Tích NG-ĐL</button>
+        <button class="btn" style="margin-top:8px" onclick="doResetChiTietCongNo()">🧹 Xóa Sạch &amp; Nạp Lại Chi Tiết Công Nợ PC</button>
       </div>
       <div class="card">
         <h3>Tiện ích khác</h3>
@@ -2322,6 +2355,10 @@ function doSetupDaily15hTrigger(){
 function doResetPhanTich(){
   if (!confirm('Xóa sạch toàn bộ dữ liệu Phân Tích Nhập/TT hiện có (kể cả dữ liệu đúng) để nạp lại từ đầu? Dữ liệu sẽ tự tính lại dần, không mất số liệu gốc (Phiếu Cân/CT thật vẫn còn nguyên).')) return;
   call('webResetPhanTichNhapTTSheet', [], 'Đang xóa sạch và chuẩn bị nạp lại...').then(res => handleResult(res));
+}
+function doResetChiTietCongNo(){
+  if (!confirm('Xóa sạch toàn bộ dữ liệu Chi Tiết Công Nợ theo Phiếu Cân hiện có để nạp lại từ đầu? Không mất số liệu gốc (Phiếu Cân vẫn còn nguyên).')) return;
+  call('webResetChiTietCongNoSheet', [], 'Đang xóa sạch và chuẩn bị nạp lại...').then(res => handleResult(res));
 }
 function doGenerateThongSo(){
   call('generateThongSoSheet', [], 'Đang tạo/cập nhật Sheet Thông Số...').then(res => handleResult(res));
