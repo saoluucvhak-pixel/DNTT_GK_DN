@@ -1774,6 +1774,10 @@ function renderDebt(){
   if (!state.debtFrom) state.debtFrom = isoDaysAgoVN(90);
   if (!state.debtTo) state.debtTo = todayISOVN();
   if (!state.ctcnNgay) state.ctcnNgay = isoDaysAgoVN(1); // mục 11: mặc định "hôm qua" (khớp snapshot 15h)
+  // MỚI (theo yêu cầu): Tình Hình Thanh Toán Gỗ Keo Hàng Ngày - mặc định
+  // CẢ 2 ngày = hôm nay (ngày hiện hành).
+  if (!state.thtFrom) state.thtFrom = todayISOVN();
+  if (!state.thtTo) state.thtTo = todayISOVN();
   // SỬA (theo yêu cầu): Phân Tích NG-ĐL có bộ lọc RIÊNG - mặc định ĐẦU
   // THÁNG hiện tại -> HÔM NAY, khác với các tab khác (3 tháng gần nhất).
   if (!state.phanTichTo) state.phanTichTo = todayISOVN();
@@ -1789,6 +1793,7 @@ function renderDebt(){
       <div class="subtab" data-t="analysis">5 · Phân tích thanh toán</div>
       <div class="subtab" data-t="phantich">6 · Phân tích Nhập/TT theo NG-ĐL</div>
       <div class="subtab" data-t="ctcn">7 · Chi tiết Công Nợ theo Phiếu Cân</div>
+      <div class="subtab" data-t="tht">8 · Tình Hình Thanh Toán Gỗ Keo Hàng Ngày</div>
     </div>
     ${showRangeFilter ? `
     <div class="card">
@@ -1852,6 +1857,7 @@ function loadDebtTab(){
   if (state.debtTab === 'analysis') return loadPaymentAnalysis();
   if (state.debtTab === 'phantich') return loadPhanTichNhapTT();
   if (state.debtTab === 'ctcn') return renderCtcnTab();
+  if (state.debtTab === 'tht') return renderThtTab();
 }
 
 /* ---------- Tab 1: Công nợ theo Khách hàng ---------- */
@@ -2081,6 +2087,7 @@ function loadPaymentAnalysis(){
 function loadPhanTichNhapTT(){
   const body = document.getElementById('debt-body');
   body.innerHTML = '<div class="card"><div class="empty"><div class="ic">⏳</div>Đang tải...</div></div>';
+  state.phanTichSubTu = ''; state.phanTichSubDen = ''; // reset lọc lại mỗi khi tải khoảng chính mới
   call('getPhanTichNhapTTReport', [state.phanTichFrom, state.phanTichTo], 'Đang tổng hợp Nhập/Thanh Toán theo NG-ĐL...').then(report => {
     state.phanTichReport = report;
     renderPhanTichNhapTTTable();
@@ -2115,16 +2122,62 @@ function renderPhanTichNhapTTTable(){
     body.innerHTML = '<div class="card"><div class="empty"><div class="ic">📭</div>Không có phát sinh Nhập/Thanh Toán nào trong khoảng ngày đã chọn.</div></div>';
     return;
   }
+  // MỚI (theo yêu cầu): bộ lọc lại (lọc con) trong ĐÚNG khoảng đã tải -
+  // không gọi lại server, chỉ lọc ngay trên dữ liệu đã có (tức thì).
+  // Ràng buộc: subTu > phanTichFrom ; subDen > phanTichFrom và < phanTichTo.
+  if (!state.phanTichSubTu || state.phanTichSubTu <= state.phanTichFrom) state.phanTichSubTu = '';
+  if (!state.phanTichSubDen || state.phanTichSubDen >= state.phanTichTo) state.phanTichSubDen = '';
+  const dangLocLai = !!(state.phanTichSubTu && state.phanTichSubDen);
+  const subTu = dangLocLai ? state.phanTichSubTu : state.phanTichFrom;
+  const subDen = dangLocLai ? state.phanTichSubDen : state.phanTichTo;
+
+  const filterPivot = (pivot) => {
+    const rows = pivot.rows.filter(r => r.ngay >= subTu && r.ngay <= subDen);
+    return { tenList: pivot.tenList, rows };
+  };
+  const r1 = filterPivot(report.nhapTheoNG), r2 = filterPivot(report.nhapTheoDL);
+  const r3 = filterPivot(report.ttTheoNG), r4 = filterPivot(report.ttTheoDL);
+
   body.innerHTML = `
     <div class="sticky-actionbar" style="position:static;margin-bottom:16px">
       <span class="muted" style="font-size:13px">Tổng hợp tự động lúc 15:00 hàng ngày cho ngày hôm trước. Nếu khoảng ngày có ngày CHƯA từng tổng hợp (vd hôm nay), hệ thống tự tính trực tiếp ngay khi xem - có thể hơi lâu hơn 1 chút cho những ngày đó.</span>
       <button class="btn accent" onclick="doExportPhanTich()">📥 Xuất Báo Cáo (Excel + PDF)</button>
     </div>
-    ${renderPhanTichPivotTable('1. Nhập Gỗ Keo theo Nguồn Gốc', report.nhapTheoNG)}
-    ${renderPhanTichPivotTable('2. Nhập Gỗ Keo theo Đại Lý', report.nhapTheoDL)}
-    ${renderPhanTichPivotTable('3. Thanh Toán theo Nguồn Gốc', report.ttTheoNG)}
-    ${renderPhanTichPivotTable('4. Thanh Toán theo Đại Lý', report.ttTheoDL)}
+    <div class="card">
+      <h3 style="margin-top:0">🔍 Lọc lại trong khoảng đã tải (${esc(state.phanTichFrom)} → ${esc(state.phanTichTo)})</h3>
+      <div class="grid cols-3">
+        <div class="field"><label>Từ ngày (phải &gt; ${esc(state.phanTichFrom)})</label><input type="date" id="pt-sub-tu" min="${esc(state.phanTichFrom)}" max="${esc(state.phanTichTo)}" value="${esc(state.phanTichSubTu)}"></div>
+        <div class="field"><label>Đến ngày (phải &gt; Từ ngày lọc lại và &lt; ${esc(state.phanTichTo)})</label><input type="date" id="pt-sub-den" min="${esc(state.phanTichFrom)}" max="${esc(state.phanTichTo)}" value="${esc(state.phanTichSubDen)}"></div>
+        <div class="field" style="display:flex; align-items:flex-end; gap:8px">
+          <button class="btn primary" onclick="applyPhanTichSubFilter()">Lọc lại</button>
+          ${dangLocLai ? `<button class="btn ghost" onclick="clearPhanTichSubFilter()">Bỏ lọc</button>` : ''}
+        </div>
+      </div>
+      ${dangLocLai ? `<div class="hint-text" style="margin-top:6px">Đang xem thu hẹp: ${esc(subTu)} → ${esc(subDen)} (trong tổng khoảng đã tải).</div>` : ''}
+    </div>
+    ${renderPhanTichPivotTable('1. Nhập Gỗ Keo theo Nguồn Gốc', r1)}
+    ${renderPhanTichPivotTable('2. Nhập Gỗ Keo theo Đại Lý', r2)}
+    ${renderPhanTichPivotTable('3. Thanh Toán theo Nguồn Gốc', r3)}
+    ${renderPhanTichPivotTable('4. Thanh Toán theo Đại Lý', r4)}
   `;
+}
+
+/** Áp dụng bộ lọc lại (lọc con) - kiểm tra đúng ràng buộc theo yêu cầu:
+ * subTu phải > phanTichFrom; subDen phải > phanTichFrom và < phanTichTo. */
+function applyPhanTichSubFilter(){
+  const subTu = document.getElementById('pt-sub-tu').value;
+  const subDen = document.getElementById('pt-sub-den').value;
+  if (!subTu || !subDen) { toast('Vui lòng chọn đủ cả 2 ngày để lọc lại.', 'warn'); return; }
+  if (subTu <= state.phanTichFrom) { toast(`"Từ ngày" lọc lại phải lớn hơn ${state.phanTichFrom}.`, 'warn'); return; }
+  if (subDen <= state.phanTichFrom || subDen >= state.phanTichTo) { toast(`"Đến ngày" lọc lại phải lớn hơn ${state.phanTichFrom} và nhỏ hơn ${state.phanTichTo}.`, 'warn'); return; }
+  if (subTu >= subDen) { toast('"Từ ngày" lọc lại phải nhỏ hơn "Đến ngày" lọc lại.', 'warn'); return; }
+  state.phanTichSubTu = subTu;
+  state.phanTichSubDen = subDen;
+  renderPhanTichNhapTTTable();
+}
+function clearPhanTichSubFilter(){
+  state.phanTichSubTu = ''; state.phanTichSubDen = '';
+  renderPhanTichNhapTTTable();
 }
 
 function doExportPhanTich(){
@@ -2267,6 +2320,135 @@ function doExportCtcn(){
 }
 
 /* ============================================================
+ * MỚI (theo yêu cầu) - Tab 8: Tình Hình Thanh Toán Gỗ Keo Hàng Ngày
+ * ============================================================ */
+function renderThtTab(){
+  const body = document.getElementById('debt-body');
+  body.innerHTML = `
+    <div class="card">
+      <div class="grid cols-3">
+        <div class="field"><label>Từ ngày</label><input type="date" id="tht-from" value="${esc(state.thtFrom)}"></div>
+        <div class="field"><label>Đến ngày</label><input type="date" id="tht-to" value="${esc(state.thtTo)}"></div>
+        <div class="field" style="display:flex; align-items:flex-end"><button class="btn primary" onclick="loadThtTab()">🔍 Xem</button></div>
+      </div>
+      <div class="grid cols-3" style="margin-top:10px">
+        <div class="field"><label>Số phiếu cân</label><select id="tht-f-sopc"><option value="">-- Tất cả --</option></select></div>
+        <div class="field"><label>Đại lý</label><select id="tht-f-dl"><option value="">-- Tất cả --</option></select></div>
+        <div class="field"><label>Nguồn gốc</label><select id="tht-f-ng"><option value="">-- Tất cả --</option></select></div>
+      </div>
+      <div class="grid cols-2" style="margin-top:10px">
+        <div class="field"><label>Khách hàng</label><select id="tht-f-kh"><option value="">-- Tất cả --</option></select></div>
+        <div class="field"><label>Ngày nhập</label><select id="tht-f-ngaynhap"><option value="">-- Tất cả --</option></select></div>
+      </div>
+      <div class="hint-text" style="margin-top:6px">Liệt kê phiếu cân ĐÃ thanh toán, lọc theo "Ngày thanh toán" trong khoảng đã chọn.</div>
+    </div>
+    <div id="tht-wrap"><div class="card"><div class="empty"><div class="ic">⏳</div>Đang tải...</div></div></div>
+  `;
+  loadThtTab();
+}
+
+function loadThtTab(){
+  const fromEl = document.getElementById('tht-from'), toEl = document.getElementById('tht-to');
+  state.thtFrom = fromEl ? fromEl.value : state.thtFrom;
+  state.thtTo = toEl ? toEl.value : state.thtTo;
+  state.thtPage = 1;
+  const wrap = document.getElementById('tht-wrap');
+  wrap.innerHTML = '<div class="card"><div class="empty"><div class="ic">⏳</div>Đang tải...</div></div>';
+  call('getTinhHinhThanhToanHangNgayWeb', [state.thtFrom, state.thtTo, {}], 'Đang tải tình hình thanh toán...').then(rows => {
+    state.thtAllRows = rows;
+    state.thtFilters = { soPhieuCan:'', dl:'', ng:'', khachHang:'', ngayNhap:'' };
+    renderThtFilterOptions();
+    applyThtFiltersAndRender();
+  });
+}
+
+function renderThtFilterOptions(){
+  const rows = state.thtAllRows || [];
+  const distinct = key => Array.from(new Set(rows.map(r=>r[key]).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b)));
+  const build = (id, key) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = state.thtFilters[key];
+    sel.innerHTML = '<option value="">-- Tất cả --</option>' + distinct(key).map(v=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(v)}</option>`).join('');
+    sel.onchange = () => { state.thtFilters[key] = sel.value; state.thtPage = 1; applyThtFiltersAndRender(); };
+  };
+  build('tht-f-sopc', 'soPhieuCan');
+  build('tht-f-dl', 'dl');
+  build('tht-f-ng', 'ng');
+  build('tht-f-kh', 'khachHang');
+  build('tht-f-ngaynhap', 'ngayNhap1');
+}
+
+function applyThtFiltersAndRender(){
+  const f = state.thtFilters || {};
+  state.thtFilteredRows = (state.thtAllRows || []).filter(r =>
+    (!f.soPhieuCan || r.soPhieuCan === f.soPhieuCan) &&
+    (!f.dl || r.dl === f.dl) &&
+    (!f.ng || r.ng === f.ng) &&
+    (!f.khachHang || r.khachHang === f.khachHang) &&
+    (!f.ngayNhap || r.ngayNhap1 === f.ngayNhap)
+  );
+  renderThtTable();
+}
+
+function renderThtTable(){
+  const wrap = document.getElementById('tht-wrap');
+  const rows = state.thtFilteredRows || [];
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="card"><div class="empty"><div class="ic">📭</div>Không có phiếu cân nào đã thanh toán khớp bộ lọc trong khoảng ngày này.</div></div>';
+    return;
+  }
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  if (state.thtPage > totalPages) state.thtPage = totalPages;
+  const pageRows = pageSlice(rows, state.thtPage);
+  const tongKl = rows.reduce((s,r)=>s+r.klKg,0);
+  const tongTien = rows.reduce((s,r)=>s+r.thanhTien,0);
+  wrap.innerHTML = `
+    <div class="grid cols-3">
+      <div class="stat"><div class="label">Số phiếu đã TT</div><div class="value">${rows.length}</div></div>
+      <div class="stat"><div class="label">Tổng KL (kg)</div><div class="value">${fmtKl(tongKl)}</div></div>
+      <div class="stat"><div class="label">Tổng Thành tiền</div><div class="value">${fmtMoney(tongTien)}</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0">Tình hình thanh toán (${esc(state.thtFrom)} → ${esc(state.thtTo)})</h3>
+        <button class="btn accent" onclick="doExportTht()">📥 Xuất Excel</button>
+      </div>
+      <div style="overflow-x:auto">
+      <table><thead><tr>
+        <th>Số phiếu cân</th><th>Ngày thanh toán</th><th>Ngày nhập</th><th>Giờ cân 1</th><th>Giờ cân 2</th>
+        <th class="num">Cân lần 1</th><th class="num">Cân lần 2</th><th>Mặt hàng</th><th>Khách hàng</th>
+        <th class="num">KL (kg)</th><th class="num">KL (tấn)</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th>
+        <th>ĐL</th><th>NG</th>
+      </tr></thead><tbody>
+        ${pageRows.map(r => `<tr>
+          <td class="mono">${esc(r.soPhieuCan)}</td><td>${esc(r.ngayThanhToan)}</td><td>${esc(r.ngayNhap1)}</td>
+          <td>${esc(r.gioCan1)}</td><td>${esc(r.gioCan2)}</td>
+          <td class="num">${fmtKl(r.canLan1)}</td><td class="num">${fmtKl(r.canLan2)}</td><td>${esc(r.matHang)}</td><td>${esc(r.khachHang)}</td>
+          <td class="num">${fmtKl(r.klKg)}</td><td class="num">${fmtKl(r.klTan)}</td><td class="num">${fmtMoney(r.donGia)}</td><td class="num">${fmtMoney(r.thanhTien)}</td>
+          <td>${esc(r.dl)}</td><td>${esc(r.ng)}</td>
+        </tr>`).join('')}
+      </tbody></table>
+      </div>
+      ${renderPager(rows.length, state.thtPage, 'goThtPage')}
+    </div>`;
+}
+function goThtPage(p){ state.thtPage = p; renderThtTable(); }
+
+function doExportTht(){
+  call('exportTinhHinhThanhToanExcel', [state.thtFrom, state.thtTo, state.thtFilters || {}], 'Đang xuất Excel...').then(res => {
+    if (res && res.success) {
+      openModal(`<div class="modal-head"><h3>Xuất Excel thành công</h3><button class="x" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body"><p>Đã xuất ${res.count} dòng.</p>
+        <a href="${res.url}" target="_blank"><button class="btn primary">Mở file Excel</button></a></div>
+        <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Đóng</button></div>`);
+    } else {
+      toast('❌ ' + (res && res.message || 'Xuất Excel thất bại.'), 'err');
+    }
+  });
+}
+
+/* ============================================================
  * CÀI ĐẶT / FILE NHÁP
  * ============================================================ */
 function renderSettings(){
@@ -2290,6 +2472,7 @@ function renderSettings(){
         <button class="btn" style="margin-top:8px" onclick="doSetupDaily15hTrigger()">⏱️ Bật Tự Động 15h (Phân Tích NG-ĐL + Chi Tiết Công Nợ PC)</button>
         <button class="btn" style="margin-top:8px" onclick="doResetPhanTich()">🧹 Xóa Sạch &amp; Nạp Lại Phân Tích NG-ĐL</button>
         <button class="btn" style="margin-top:8px" onclick="doResetChiTietCongNo()">🧹 Xóa Sạch &amp; Nạp Lại Chi Tiết Công Nợ PC</button>
+        <button class="btn" style="margin-top:8px" onclick="doShowWebhookInfo()">🔑 Xem Link Webhook Làm Mới Cache Tức Thì</button>
       </div>
       <div class="card">
         <h3>Tiện ích khác</h3>
@@ -2359,6 +2542,20 @@ function doResetPhanTich(){
 function doResetChiTietCongNo(){
   if (!confirm('Xóa sạch toàn bộ dữ liệu Chi Tiết Công Nợ theo Phiếu Cân hiện có để nạp lại từ đầu? Không mất số liệu gốc (Phiếu Cân vẫn còn nguyên).')) return;
   call('webResetChiTietCongNoSheet', [], 'Đang xóa sạch và chuẩn bị nạp lại...').then(res => handleResult(res));
+}
+function doShowWebhookInfo(){
+  call('getWebhookInfoForWeb', [], 'Đang tạo link...').then(res => {
+    if (!res || !res.success) { toast('❌ ' + (res && res.message || 'Không lấy được link.'), 'err'); return; }
+    openModal(`<div class="modal-head"><h3>Webhook Làm Mới Cache Tức Thì</h3><button class="x" onclick="closeModal()">&times;</button></div>
+      <div class="modal-body" style="font-size:13px;line-height:1.6">
+        <p><b>Bước 1:</b> Mở Apps Script Editor của file <b>PhieuCan_DN</b> (và tương tự cho file <b>HD_NCC</b>), dán đoạn code sau vào 1 file .gs mới:</p>
+        <textarea readonly style="width:100%;height:110px;font-family:monospace;font-size:12px">${esc(res.script)}</textarea>
+        <p><b>Bước 2:</b> Menu bên trái "Trình kích hoạt" (Triggers) → "+ Thêm trình kích hoạt" → chọn hàm <b>onChangeLamMoiCache</b> → Loại sự kiện: <b>"Khi thay đổi trang tính" (On change)</b> → Lưu.</p>
+        <p style="color:#b00">⚠️ Lặp lại y hệt ở CẢ file HD_NCC (dùng chung 1 đoạn code này).</p>
+        <p class="muted" style="font-size:12px">Dùng "On change" (không phải "On edit") để không gọi quá nhiều lần khi sửa hàng loạt ô cùng lúc.</p>
+      </div>
+      <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Đóng</button></div>`);
+  });
 }
 function doGenerateThongSo(){
   call('generateThongSoSheet', [], 'Đang tạo/cập nhật Sheet Thông Số...').then(res => handleResult(res));
