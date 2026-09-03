@@ -16,7 +16,10 @@ const CFG = {
 
 
 const utils = {
-  standardize: (v) => v ? String(v).replace(/\s+/g, '').toUpperCase().trim() : "",
+  // Bỏ dấu ' (ép định dạng text) ở đầu chuỗi trước khi chuẩn hoá, tránh lệch khóa
+  // khi so khớp giữa các cột đã được ghi "'" + giá trị (VD: Số phiếu cân, Số HĐ trong DNTT_GK_DN_CT)
+  // với giá trị gốc không có dấu ' ở các sheet ngoại vi (PhieuCan_DN, HD_NCC...).
+  standardize: (v) => v ? String(v).replace(/^'+/, '').replace(/\s+/g, '').toUpperCase().trim() : "",
   formatDate: (d) => (d instanceof Date && d.getFullYear() > 1900) ? Utilities.formatDate(d, "GMT+7", "dd/MM/yyyy") : (d ? String(d) : ""),
   parseNum: (v) => {
     if (typeof v === 'number') return isNaN(v) ? 0 : v;
@@ -208,8 +211,8 @@ function renderSheet2Detail(sheet, filteredRows, dateRange) {
 
       tempRows.push({
         data: [
-          0, parentInfo?.soLan, "'" + ctRow[11], utils.formatDate(ctRow[20]), utils.formatDate(pc[1]), 
-          pc[13], "'" + ctRow[19], pc[5], ctRow[3], "'" + (hd[6]||""), hd[10], "'" + (hd[11]||""), 
+          0, parentInfo?.soLan, ctRow[11], utils.formatDate(ctRow[20]), utils.formatDate(pc[1]),
+          pc[13], ctRow[19], pc[5], ctRow[3], "'" + (hd[6]||""), hd[10], "'" + (hd[11]||""),
           hd[5], hd[18], pc[2], pc[4], utils.parseNum(pc[7]), utils.parseNum(pc[8]), 
           utils.parseNum(pc[9]), utils.parseNum(pc[9])/1000, utils.parseNum(pc[23]), 
           utils.parseNum(pc[25]), pc[14], hd[16], "'" + (hd[15]||""), ctRow[2]
@@ -586,12 +589,42 @@ function onOpen() {
       .addToUi();
 }
 
-// Hàm phụ để mở hộp thoại nhập ngày nếu cần
+// Hàm phụ để mở hộp thoại nhập ngày và chốt thanh toán cho các dòng đang chọn
 function showPayDialog() {
   var ui = SpreadsheetApp.getUi();
-  var result = ui.prompt('Xác nhận chốt', 'Nhập ngày thanh toán (dd/mm/yyyy):', ui.ButtonSet.OK_CANCEL);
-  if (result.getSelectedButton() == ui.Button.OK) {
-    // Gọi hàm runConfirmPayment với dữ liệu từ prompt
-    // Ví dụ: runConfirmPayment(selectedIds, result.getResponseText());
+  var sheet = SpreadsheetApp.getActiveSheet();
+
+  if (sheet.getName() !== CFG.DNTT_112) {
+    ui.alert("⚠️ Vui lòng chuyển đến sheet '" + CFG.DNTT_112 + "' và chọn (bôi đen) các dòng hồ sơ cần chốt thanh toán trước khi thực hiện.");
+    return;
   }
+
+  // Lấy Mã hệ thống (cột A) từ các dòng đang được chọn, bỏ qua dòng tiêu đề
+  var ranges = sheet.getActiveRangeList() ? sheet.getActiveRangeList().getRanges() : [sheet.getActiveRange()];
+  var ids = [];
+  ranges.forEach(function(rg) {
+    var startRow = Math.max(rg.getRow(), 2);
+    var endRow = rg.getLastRow();
+    if (startRow > endRow) return;
+    var vals = sheet.getRange(startRow, 1, endRow - startRow + 1, 1).getValues();
+    vals.forEach(function(v) { if (v[0]) ids.push(String(v[0]).trim()); });
+  });
+  ids = [...new Set(ids)];
+
+  if (!ids.length) {
+    ui.alert("⚠️ Vui lòng chọn ít nhất một dòng hồ sơ (có Mã hệ thống ở cột A) trước khi chốt thanh toán.");
+    return;
+  }
+
+  var result = ui.prompt('Xác nhận chốt', 'Đã chọn ' + ids.length + ' hồ sơ.\nNhập ngày thanh toán (dd/mm/yyyy):', ui.ButtonSet.OK_CANCEL);
+  if (result.getSelectedButton() !== ui.Button.OK) return;
+
+  var payDateStr = result.getResponseText().trim();
+  if (!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(payDateStr)) {
+    ui.alert("❌ Ngày không hợp lệ. Vui lòng nhập đúng định dạng dd/mm/yyyy.");
+    return;
+  }
+
+  var msg = runConfirmPayment(ids, payDateStr);
+  ui.alert(msg);
 }
