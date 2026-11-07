@@ -72,15 +72,29 @@ function findBankFull(input) {
   return "";
 }
 
+/** Giá trị mặc định (lấy từ CFG trong Code.gs) để điền sẵn vào form tạo UNC */
+function getUncDefaults() {
+  return { tkTrichNo: CFG.TK_TRICH_NO, tkThuPhi: CFG.TK_THU_PHI };
+}
+
+function _cleanAccount(v, def, label) {
+  const s = String(v == null ? "" : v).replace(/[\s'.\-]/g, "");
+  if (!s) return def;
+  if (!/^\d{6,25}$/.test(s)) throw new Error(label + " không hợp lệ (chỉ gồm 6-25 chữ số): " + v);
+  return s;
+}
+
 /**
  * @param {string[]} selectedIds  ID hệ thống (cột A sheet 112) của các hồ sơ cần xuất
  * Ghi dữ liệu vào sheet mẫu UNC_NGANHANG_HAK (xóa dữ liệu cũ từ dòng 4 của UP_UNC và dòng 2 của TH_UNC),
  * xuất toàn bộ file ra .xlsx, lưu vào thư mục báo cáo và trả về base64 để trình duyệt tải về ngay.
  * @return {{success:boolean,fileName?:string,fileUrl?:string,base64?:string,message?:string,warnings?:string[],count?:number,total?:number}}
  */
-function createUpUncFile(selectedIds) {
+function createUpUncFile(selectedIds, opts) {
   const lock = sysLock.acquire(); // sheet mẫu dùng chung, tránh 2 người ghi cùng lúc
   try {
+    const tkTrichNo = _cleanAccount(opts && opts.tkTrichNo, CFG.TK_TRICH_NO, "Tài khoản trích nợ");
+    const tkThuPhi = _cleanAccount(opts && opts.tkThuPhi, CFG.TK_THU_PHI, "Tài khoản thu phí");
     const ids = new Set((selectedIds || []).map(x => String(x).trim()));
     if (!ids.size) return { success: false, message: "Chưa có hồ sơ nào để xuất UNC." };
 
@@ -120,8 +134,8 @@ function createUpUncFile(selectedIds) {
       if (bank.indexOf("BIDV") >= 0) warnings.push("Người nhận tại BIDV: " + label + " - mẫu đang để \"" + UNC_CFG.PHUONG_THUC + "\", hãy kiểm tra phương thức chuyển.");
       total += tien;
       body.push([
-        String(body.length + 1), UNC_CFG.PHUONG_THUC, CFG.TK_TRICH_NO, ten, stk, bank, tien, UNC_CFG.LOAI_TIEN,
-        nd, "", "", "", "", UNC_CFG.BEN_CHIU_PHI, CFG.TK_THU_PHI, effDate, batchId.get(lanOf(r)), newId()
+        String(body.length + 1), UNC_CFG.PHUONG_THUC, tkTrichNo, ten, stk, bank, tien, UNC_CFG.LOAI_TIEN,
+        nd, "", "", "", "", UNC_CFG.BEN_CHIU_PHI, tkThuPhi, effDate, batchId.get(lanOf(r)), newId()
       ]);
     });
     if (!body.length) return { success: false, message: "Không có dòng hợp lệ để xuất.", warnings: warnings };
@@ -145,7 +159,7 @@ function createUpUncFile(selectedIds) {
     // --- TH_UNC: mỗi Lần = 1 lô ---
     const th = [];
     batchId.forEach((id, lan) => {
-      th.push([id, effDate, UNC_CFG.PHUONG_THUC, CFG.TK_TRICH_NO, UNC_CFG.LOAI_TIEN, CFG.TK_THU_PHI, utils.parseNum(lan), UNC_CFG.BEN_CHIU_PHI]);
+      th.push([id, effDate, UNC_CFG.PHUONG_THUC, tkTrichNo, UNC_CFG.LOAI_TIEN, tkThuPhi, utils.parseNum(lan), UNC_CFG.BEN_CHIU_PHI]);
     });
     if (sh2.getLastRow() >= 2) sh2.getRange(2, 1, sh2.getLastRow() - 1, 8).clearContent();
     ensureRows(sh2, 1 + th.length);
