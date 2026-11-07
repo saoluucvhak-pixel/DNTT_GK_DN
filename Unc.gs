@@ -183,6 +183,7 @@ function createUpUncFile(selectedIds, opts) {
       success: true,
       fileName: xlsxName,
       fileUrl: xlsxFile.getUrl(),
+      downloadUrl: "https://drive.google.com/uc?export=download&id=" + xlsxFile.getId(),
       base64: Utilities.base64Encode(blob.getBytes()),
       count: body.length,
       total: total,

@@ -294,15 +294,10 @@
     showLoading(true, "Đang tạo file Excel ngân hàng...");
     google.script.run.withSuccessHandler(res => {
       showLoading(false);
-      const box = document.getElementById('uncResult');
       if (res && res.success) {
         lastBank = res;
-        box.className = 'alert alert-success no-print';
-        box.innerHTML = '✅ Đã tạo file Excel <b>' + esc(res.fileName) + '</b>: <b>' + res.count + '</b> dòng. ' +
-          '<button class="btn btn-sm btn-success ms-2" onclick="downloadBank()"><i class="fas fa-download"></i> Tải lại file .xlsx</button> ' +
-          '<a href="' + esc(res.fileUrl) + '" target="_blank">Mở trong Drive</a>';
-        box.style.display = 'block';
-        downloadBank();
+        showFileResult(res, 'Đã tạo file Excel <b>' + esc(res.fileName) + '</b>: <b>' + res.count + '</b> dòng.',
+          'Đã tạo file ' + res.fileName + ' (' + res.count + ' dòng).', 'bank');
       } else alert("Lỗi: " + ((res && res.message) || "không xác định"));
     }).withFailureHandler(err => {
       showLoading(false);
@@ -340,15 +335,15 @@
         box.className = 'alert alert-danger no-print';
         box.innerHTML = '❌ ' + esc((res && res.message) || 'Lỗi không xác định') + (res && res.warnings ? '<ul class="mb-0">' + res.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '');
       } else {
-        box.className = 'alert alert-success no-print';
         lastUnc = res;
-        box.innerHTML = '✅ Đã tạo file Excel <b>' + esc(res.fileName) + '</b>: <b>' + res.count + '</b> khoản, tổng <b>' + Number(res.total).toLocaleString() + '</b> VNĐ. ' +
-          '<button class="btn btn-sm btn-success ms-2" onclick="downloadUnc()"><i class="fas fa-download"></i> Tải lại file .xlsx</button> ' +
-          '<a href="' + esc(res.fileUrl) + '" target="_blank">Mở trong Drive</a>' +
-          (res.warnings && res.warnings.length ? '<div class="mt-2 text-danger"><b>Cần kiểm tra:</b><ul class="mb-0">' + res.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '');
-        downloadUnc();
+        const w = (res.warnings && res.warnings.length) ? '<div class="mt-2 text-danger"><b>Cần kiểm tra:</b><ul class="mb-0">' + res.warnings.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '';
+        showFileResult(res, 'Đã tạo file Excel <b>' + esc(res.fileName) + '</b>: <b>' + res.count + '</b> khoản, tổng <b>' + Number(res.total).toLocaleString() + '</b> VNĐ.',
+          'Đã tạo file ' + res.fileName + ' (' + res.count + ' khoản, tổng ' + Number(res.total).toLocaleString() + ' VNĐ).' + (res.warnings && res.warnings.length ? '\nCó ' + res.warnings.length + ' cảnh báo cần kiểm tra.' : ''), 'unc', w);
+        return;
       }
       box.style.display = 'block';
+      try { box.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+      alert('❌ ' + ((res && res.message) || 'Lỗi không xác định'));
     }).withFailureHandler(err => {
       showLoading(false);
       alert("Lỗi xuất UNC: " + err);

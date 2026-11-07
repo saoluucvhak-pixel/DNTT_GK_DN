@@ -323,6 +323,7 @@ function updateBankFile(filteredRows) {
       count: bankUpdateRows.length,
       fileName: fileName,
       fileUrl: xlsxFile.getUrl(),
+      downloadUrl: "https://drive.google.com/uc?export=download&id=" + xlsxFile.getId(),
       base64: Utilities.base64Encode(blob.getBytes())
     };
   } catch (e) {
