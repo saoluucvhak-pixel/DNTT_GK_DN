@@ -287,11 +287,24 @@
     }).updateBankFile(currentFilteredData);
   }
 
+  let lastUnc = null;
+  function downloadUnc() {
+    if (!lastUnc || !lastUnc.base64) return;
+    const bin = atob(lastUnc.base64), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = lastUnc.fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+
   function handleCreateUncWeb() {
     if (!currentFilteredData.length) return alert("Hãy lọc dữ liệu trước khi xuất UNC!");
     const total = currentFilteredData.reduce((s, r) => s + Number(r.soTien || 0), 0);
     if (!confirm("Xuất file UP_UNC cho " + currentFilteredData.length + " khoản chuyển, tổng " + total.toLocaleString() + " VNĐ?")) return;
-    showLoading(true, "Đang tạo file UP_UNC theo mẫu ngân hàng...");
+    showLoading(true, "Đang tạo file Excel UP_UNC theo mẫu ngân hàng...");
     google.script.run.withSuccessHandler(res => {
       showLoading(false);
       const box = document.getElementById('uncResult');
@@ -300,9 +313,12 @@
         box.innerHTML = '❌ ' + esc((res && res.message) || 'Lỗi không xác định') + (res && res.warnings ? '<ul class="mb-0">' + res.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '');
       } else {
         box.className = 'alert alert-success no-print';
-        box.innerHTML = '✅ Đã tạo UP_UNC: <b>' + res.count + '</b> khoản, tổng <b>' + Number(res.total).toLocaleString() + '</b> VNĐ. ' +
-          '<a href="' + esc(res.url) + '" target="_blank">Mở Google Sheet</a> | <a href="' + esc(res.xlsxUrl) + '" target="_blank"><b>Tải file .xlsx để up ngân hàng</b></a>' +
+        lastUnc = res;
+        box.innerHTML = '✅ Đã tạo file Excel <b>' + esc(res.fileName) + '</b>: <b>' + res.count + '</b> khoản, tổng <b>' + Number(res.total).toLocaleString() + '</b> VNĐ. ' +
+          '<button class="btn btn-sm btn-success ms-2" onclick="downloadUnc()"><i class="fas fa-download"></i> Tải lại file .xlsx</button> ' +
+          '<a href="' + esc(res.fileUrl) + '" target="_blank">Mở trong Drive</a>' +
           (res.warnings && res.warnings.length ? '<div class="mt-2 text-danger"><b>Cần kiểm tra:</b><ul class="mb-0">' + res.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '');
+        downloadUnc();
       }
       box.style.display = 'block';
     }).withFailureHandler(err => {

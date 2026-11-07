@@ -74,7 +74,8 @@ function findBankFull(input) {
 
 /**
  * @param {string[]} selectedIds  ID hệ thống (cột A sheet 112) của các hồ sơ cần xuất
- * @return {{success:boolean,url?:string,xlsxUrl?:string,message?:string,warnings?:string[],count?:number,total?:number}}
+ * Tạo file EXCEL (.xlsx) lưu vào thư mục báo cáo và trả về base64 để trình duyệt tải về ngay.
+ * @return {{success:boolean,fileName?:string,fileUrl?:string,base64?:string,message?:string,warnings?:string[],count?:number,total?:number}}
  */
 function createUpUncFile(selectedIds) {
   let newSS = null;
@@ -123,8 +124,7 @@ function createUpUncFile(selectedIds) {
     if (!body.length) return { success: false, message: "Không có dòng hợp lệ để xuất.", warnings: warnings };
 
     const fileName = "UP_UNC (" + Utilities.formatDate(today, CFG.TZ, "dd-MM-yyyy HHmm") + ")";
-    newSS = SpreadsheetApp.create(fileName);
-    DriveApp.getFileById(newSS.getId()).moveTo(DriveApp.getFolderById(CFG.FOLDER_REPORT_ID));
+    newSS = SpreadsheetApp.create(fileName); // bảng tính tạm, sẽ xuất ra .xlsx rồi xóa
 
     // --- UP_UNC ---
     const sh1 = newSS.getSheets()[0];
@@ -153,11 +153,25 @@ function createUpUncFile(selectedIds) {
     sh2.autoResizeColumns(1, 8);
 
     SpreadsheetApp.flush();
-    const id = newSS.getId();
+
+    // Xuất sang .xlsx
+    const tmpId = newSS.getId();
+    const resp = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + tmpId + "/export?format=xlsx", {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    if (resp.getResponseCode() !== 200) throw new Error("Không xuất được file Excel (HTTP " + resp.getResponseCode() + ").");
+    const xlsxName = fileName + ".xlsx";
+    const blob = resp.getBlob().setName(xlsxName);
+    const xlsxFile = DriveApp.getFolderById(CFG.FOLDER_REPORT_ID).createFile(blob);
+    DriveApp.getFileById(tmpId).setTrashed(true);
+    newSS = null;
+
     return {
       success: true,
-      url: newSS.getUrl(),
-      xlsxUrl: "https://docs.google.com/spreadsheets/d/" + id + "/export?format=xlsx",
+      fileName: xlsxName,
+      fileUrl: xlsxFile.getUrl(),
+      base64: Utilities.base64Encode(blob.getBytes()),
       count: body.length,
       total: total,
       warnings: warnings
