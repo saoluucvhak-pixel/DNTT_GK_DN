@@ -273,31 +273,25 @@
   }
 
   function handleBankFileWeb() {
-    if (!currentFilteredData.length) return alert("Hãy lọc dữ liệu trước khi cập nhật file ngân hàng!");
-    if (!confirm("Cập nhật FILE NGÂN HÀNG cho " + currentFilteredData.length + " hồ sơ?\n\nDữ liệu cũ của sheet Update_NganHang_DN sẽ bị XOÁ và ghi mới.")) return;
-    showLoading(true, "Đang ghi dữ liệu vào file ngân hàng...");
+    if (!currentFilteredData.length) return alert("Hãy lọc dữ liệu trước khi tạo file ngân hàng!");
+    if (!confirm("Tạo FILE NGÂN HÀNG cho " + currentFilteredData.length + " hồ sơ?\n\nDữ liệu cũ của sheet Update_NganHang_DN sẽ bị XOÁ và ghi mới.")) return;
+    showLoading(true, "Đang tạo file Excel ngân hàng...");
     google.script.run.withSuccessHandler(res => {
       showLoading(false);
+      const box = document.getElementById('uncResult');
       if (res && res.success) {
-        if (confirm("✅ Đã ghi " + res.count + " dòng vào file ngân hàng. Mở file ngay?")) window.open(res.url, '_blank');
+        lastBank = res;
+        box.className = 'alert alert-success no-print';
+        box.innerHTML = '✅ Đã tạo file Excel <b>' + esc(res.fileName) + '</b>: <b>' + res.count + '</b> dòng. ' +
+          '<button class="btn btn-sm btn-success ms-2" onclick="downloadBank()"><i class="fas fa-download"></i> Tải lại file .xlsx</button> ' +
+          '<a href="' + esc(res.fileUrl) + '" target="_blank">Mở trong Drive</a>';
+        box.style.display = 'block';
+        downloadBank();
       } else alert("Lỗi: " + ((res && res.message) || "không xác định"));
     }).withFailureHandler(err => {
       showLoading(false);
-      alert("Lỗi cập nhật file ngân hàng: " + err);
+      alert("Lỗi tạo file ngân hàng: " + err);
     }).updateBankFile(currentFilteredData);
-  }
-
-  let lastUnc = null;
-  function downloadUnc() {
-    if (!lastUnc || !lastUnc.base64) return;
-    const bin = atob(lastUnc.base64), bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = lastUnc.fileName;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
   }
 
   function handleCreateUncWeb() {

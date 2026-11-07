@@ -258,6 +258,25 @@ function renderSheet2Detail(sheet, filteredRows, dateRange) {
   }
 }
 
+/** Xuất đúng 1 sheet ra blob .xlsx (qua bảng tính tạm, xóa sau khi xuất) */
+function exportSheetToXlsx_(sheet, fileName) {
+  const tmp = SpreadsheetApp.create(fileName);
+  try {
+    const copied = sheet.copyTo(tmp);
+    copied.setName(sheet.getName());
+    tmp.deleteSheet(tmp.getSheets()[0]); // bỏ sheet mặc định
+    SpreadsheetApp.flush();
+    const resp = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + tmp.getId() + "/export?format=xlsx", {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    if (resp.getResponseCode() !== 200) throw new Error("Không xuất được file Excel (HTTP " + resp.getResponseCode() + ").");
+    return resp.getBlob().setName(fileName);
+  } finally {
+    try { DriveApp.getFileById(tmp.getId()).setTrashed(true); } catch (x) {}
+  }
+}
+
 // ============================================================
 // NÚT 4: FILE NGÂN HÀNG (XÓA VÀ GHI MỚI sheet Update_NganHang_DN)
 // ============================================================
@@ -294,7 +313,18 @@ function updateBankFile(filteredRows) {
     });
     shUpdateNH.getRange(2, 1, bankUpdateRows.length, 33).setValues(bankUpdateRows);
     SpreadsheetApp.flush();
-    return { success: true, count: bankUpdateRows.length, url: ssNH.getUrl() };
+
+    // Xuất riêng sheet Update_NganHang_DN ra file Excel, lưu vào thư mục báo cáo
+    const fileName = "UPDATE_NGANHANG (" + Utilities.formatDate(new Date(), CFG.TZ, "dd-MM-yyyy HHmm") + ").xlsx";
+    const blob = exportSheetToXlsx_(shUpdateNH, fileName);
+    const xlsxFile = DriveApp.getFolderById(CFG.FOLDER_REPORT_ID).createFile(blob);
+    return {
+      success: true,
+      count: bankUpdateRows.length,
+      fileName: fileName,
+      fileUrl: xlsxFile.getUrl(),
+      base64: Utilities.base64Encode(blob.getBytes())
+    };
   } catch (e) {
     return { success: false, message: e.toString() };
   } finally { lock.releaseLock(); }
