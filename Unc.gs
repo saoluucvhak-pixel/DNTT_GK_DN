@@ -36,11 +36,9 @@ function _uncHasWord(text, tok) {
 }
 
 let _bankIndex = null;
-let _bankList = null; // nếu có: danh mục đọc từ sheet DM_TKNH, ngược lại dùng BANK_LIST (Banks.gs)
-function _setBankList(list) { _bankList = list; _bankIndex = null; }
 function _getBankIndex() {
   if (_bankIndex) return _bankIndex;
-  _bankIndex = (_bankList || BANK_LIST).map(b => {
+  _bankIndex = BANK_LIST.map(b => {
     const full = b[0], shortC = b[1];
     const lastSeg = full.split(" - ").pop();
     const toks = [...new Set([_uncNorm(shortC), _uncNorm(lastSeg)].filter(t => t.length >= 2))];
@@ -96,16 +94,6 @@ function createUpUncFile(selectedIds) {
     if (!rows.length) return { success: false, message: "Không tìm thấy hồ sơ trong sheet 112." };
 
     const tmpl = SpreadsheetApp.openById(UNC_CFG.SS_ID);
-
-    // Lấy mẫu tên ngân hàng từ sheet DM_TKNH của file mẫu (cột B = tên đầy đủ, cột C = tên ngắn)
-    _setBankList(null);
-    const shDM = tmpl.getSheetByName("DM_TKNH");
-    if (shDM && shDM.getLastRow() > 1) {
-      const dm = shDM.getRange(2, 2, shDM.getLastRow() - 1, 2).getValues()
-        .filter(r => String(r[0]).trim())
-        .map(r => [String(r[0]).trim(), String(r[1] || "").trim()]);
-      if (dm.length) _setBankList(dm);
-    }
 
     const warnings = [];
     const today = new Date();
