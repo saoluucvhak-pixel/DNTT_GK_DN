@@ -4,6 +4,7 @@
  * - Sheet TH_UNC : mỗi "Lần" = 1 lô (ID_UNC)
  */
 const UNC_CFG = {
+  SS_ID: "1v6MlQaMF4N8BoTUqaraInxJFPUKcA7u3z_zVle8cXw8", // Sheet mẫu UNC_NGANHANG_HAK (UP_UNC, TH_UNC, DM_TKNH)
   TK_TRICH_NO: "5622289731",              // Tài khoản trích nợ (theo file mẫu) - sửa nếu đổi tài khoản
   PHUONG_THUC: "O - Chuyển ngoài BIDV",
   LOAI_TIEN: "VND",
@@ -35,9 +36,11 @@ function _uncHasWord(text, tok) {
 }
 
 let _bankIndex = null;
+let _bankList = null; // nếu có: danh mục đọc từ sheet DM_TKNH, ngược lại dùng BANK_LIST (Banks.gs)
+function _setBankList(list) { _bankList = list; _bankIndex = null; }
 function _getBankIndex() {
   if (_bankIndex) return _bankIndex;
-  _bankIndex = BANK_LIST.map(b => {
+  _bankIndex = (_bankList || BANK_LIST).map(b => {
     const full = b[0], shortC = b[1];
     const lastSeg = full.split(" - ").pop();
     const toks = [...new Set([_uncNorm(shortC), _uncNorm(lastSeg)].filter(t => t.length >= 2))];
@@ -74,11 +77,12 @@ function findBankFull(input) {
 
 /**
  * @param {string[]} selectedIds  ID hệ thống (cột A sheet 112) của các hồ sơ cần xuất
- * Tạo file EXCEL (.xlsx) lưu vào thư mục báo cáo và trả về base64 để trình duyệt tải về ngay.
+ * Ghi dữ liệu vào sheet mẫu UNC_NGANHANG_HAK (xóa dữ liệu cũ từ dòng 4 của UP_UNC và dòng 2 của TH_UNC),
+ * xuất toàn bộ file ra .xlsx, lưu vào thư mục báo cáo và trả về base64 để trình duyệt tải về ngay.
  * @return {{success:boolean,fileName?:string,fileUrl?:string,base64?:string,message?:string,warnings?:string[],count?:number,total?:number}}
  */
 function createUpUncFile(selectedIds) {
-  let newSS = null;
+  const lock = sysLock.acquire(); // sheet mẫu dùng chung, tránh 2 người ghi cùng lúc
   try {
     const ids = new Set((selectedIds || []).map(x => String(x).trim()));
     if (!ids.size) return { success: false, message: "Chưa có hồ sơ nào để xuất UNC." };
@@ -90,6 +94,18 @@ function createUpUncFile(selectedIds) {
     // Đọc lại từ server (không tin số liệu do trình duyệt gửi lên)
     const rows = data.filter(r => ids.has(String(r[0]).trim()));
     if (!rows.length) return { success: false, message: "Không tìm thấy hồ sơ trong sheet 112." };
+
+    const tmpl = SpreadsheetApp.openById(UNC_CFG.SS_ID);
+
+    // Lấy mẫu tên ngân hàng từ sheet DM_TKNH của file mẫu (cột B = tên đầy đủ, cột C = tên ngắn)
+    _setBankList(null);
+    const shDM = tmpl.getSheetByName("DM_TKNH");
+    if (shDM && shDM.getLastRow() > 1) {
+      const dm = shDM.getRange(2, 2, shDM.getLastRow() - 1, 2).getValues()
+        .filter(r => String(r[0]).trim())
+        .map(r => [String(r[0]).trim(), String(r[1] || "").trim()]);
+      if (dm.length) _setBankList(dm);
+    }
 
     const warnings = [];
     const today = new Date();
@@ -124,39 +140,36 @@ function createUpUncFile(selectedIds) {
     if (!body.length) return { success: false, message: "Không có dòng hợp lệ để xuất.", warnings: warnings };
 
     const fileName = "UP_UNC (" + Utilities.formatDate(today, CFG.TZ, "dd-MM-yyyy HHmm") + ")";
-    newSS = SpreadsheetApp.create(fileName); // bảng tính tạm, sẽ xuất ra .xlsx rồi xóa
+    const sh1 = tmpl.getSheetByName("UP_UNC");
+    const sh2 = tmpl.getSheetByName("TH_UNC");
+    if (!sh1 || !sh2) throw new Error("Sheet mẫu thiếu UP_UNC hoặc TH_UNC.");
+    const ensureRows = (sh, need) => { const mr = sh.getMaxRows(); if (mr < need) sh.insertRowsAfter(mr, need - mr); };
 
-    // --- UP_UNC ---
-    const sh1 = newSS.getSheets()[0];
-    sh1.setName("UP_UNC");
+    // --- UP_UNC: giữ 3 dòng tiêu đề của mẫu, ghi dữ liệu từ dòng 4 ---
     const nCol = UNC_CFG.HEADERS.length;
-    sh1.getRange(1, 1, 3, nCol).setNumberFormat("@").setValues([UNC_CFG.HEADERS, UNC_CFG.HEADERS, UNC_CFG.HEADERS]);
-    sh1.getRange(1, 1, 3, nCol).setFontWeight("bold");
+    if (sh1.getLastRow() >= 4) sh1.getRange(4, 1, sh1.getLastRow() - 3, nCol).clearContent();
+    ensureRows(sh1, 3 + body.length);
     const textCols = [1, 2, 3, 4, 5, 6, 8, 9, 14, 15, 17, 18];
     textCols.forEach(c => sh1.getRange(4, c, body.length, 1).setNumberFormat("@"));
     sh1.getRange(4, 1, body.length, nCol).setValues(body);
     sh1.getRange(4, 7, body.length, 1).setNumberFormat("#,##0");
     sh1.getRange(4, 16, body.length, 1).setNumberFormat('d"/"m"/"yyyy');
-    sh1.setFrozenRows(3);
-    sh1.autoResizeColumns(1, nCol);
 
-    // --- TH_UNC ---
-    const sh2 = newSS.insertSheet("TH_UNC");
-    sh2.getRange(1, 1, 1, UNC_CFG.TH_HEADERS.length).setValues([UNC_CFG.TH_HEADERS]).setFontWeight("bold");
+    // --- TH_UNC: mỗi Lần = 1 lô ---
     const th = [];
     batchId.forEach((id, lan) => {
       th.push([id, effDate, UNC_CFG.PHUONG_THUC, UNC_CFG.TK_TRICH_NO, UNC_CFG.LOAI_TIEN, UNC_CFG.TK_TRICH_NO, utils.parseNum(lan), UNC_CFG.BEN_CHIU_PHI]);
     });
+    if (sh2.getLastRow() >= 2) sh2.getRange(2, 1, sh2.getLastRow() - 1, 8).clearContent();
+    ensureRows(sh2, 1 + th.length);
     [1, 3, 4, 6].forEach(c => sh2.getRange(2, c, th.length, 1).setNumberFormat("@"));
     sh2.getRange(2, 2, th.length, 1).setNumberFormat('d"/"m"/"yyyy');
     sh2.getRange(2, 1, th.length, 8).setValues(th);
-    sh2.autoResizeColumns(1, 8);
 
     SpreadsheetApp.flush();
 
-    // Xuất sang .xlsx
-    const tmpId = newSS.getId();
-    const resp = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + tmpId + "/export?format=xlsx", {
+    // Xuất toàn bộ file mẫu (UP_UNC, TH_UNC, DM_TKNH) sang .xlsx
+    const resp = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + UNC_CFG.SS_ID + "/export?format=xlsx", {
       headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
       muteHttpExceptions: true
     });
@@ -164,8 +177,6 @@ function createUpUncFile(selectedIds) {
     const xlsxName = fileName + ".xlsx";
     const blob = resp.getBlob().setName(xlsxName);
     const xlsxFile = DriveApp.getFolderById(CFG.FOLDER_REPORT_ID).createFile(blob);
-    DriveApp.getFileById(tmpId).setTrashed(true);
-    newSS = null;
 
     return {
       success: true,
@@ -177,7 +188,6 @@ function createUpUncFile(selectedIds) {
       warnings: warnings
     };
   } catch (e) {
-    if (newSS) { try { DriveApp.getFileById(newSS.getId()).setTrashed(true); } catch (x) {} }
     return { success: false, message: e.toString() };
-  }
+  } finally { lock.releaseLock(); }
 }
