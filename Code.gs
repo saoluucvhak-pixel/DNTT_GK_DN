@@ -11,18 +11,37 @@ const CFG = {
   DNTT_112: "DNTT_GK_DN_112",
   PC_SHEET: "PhieuCan_DN",
   SPLIT_COL: "Số phiếu cân",
-  LAN_TT: "Lanthanhtoan"
+  LAN_TT: "Lanthanhtoan",
+  TZ: "Asia/Ho_Chi_Minh"
 };
 
 
 const utils = {
   standardize: (v) => v ? String(v).replace(/\s+/g, '').toUpperCase().trim() : "",
-  formatDate: (d) => (d instanceof Date && d.getFullYear() > 1900) ? Utilities.formatDate(d, "GMT+7", "dd/MM/yyyy") : (d ? String(d) : ""),
+  formatDate: (d) => (d instanceof Date && d.getFullYear() > 1900) ? Utilities.formatDate(d, CFG.TZ, "dd/MM/yyyy") : (d ? String(d) : ""),
+  // Hiểu cả số kiểu VN (1.234.567,89) lẫn kiểu US (1,234,567.89)
   parseNum: (v) => {
     if (typeof v === 'number') return isNaN(v) ? 0 : v;
     if (!v) return 0;
-    let n = parseFloat(String(v).replace(/[^0-9.-]+/g, ""));
-    return isNaN(n) ? 0 : n;
+    let str = String(v).replace(/[^0-9.,-]+/g, "");
+    const neg = str.charAt(0) === "-";
+    str = str.replace(/-/g, "");
+    const lastDot = str.lastIndexOf("."), lastComma = str.lastIndexOf(",");
+    const cntDot = (str.match(/\./g) || []).length, cntComma = (str.match(/,/g) || []).length;
+    let decSep = "";
+    if (lastDot >= 0 && lastComma >= 0) decSep = lastDot > lastComma ? "." : ",";
+    else if (cntDot > 1 || cntComma > 1) decSep = "";            // nhiều dấu giống nhau => ngăn cách nghìn
+    else if (lastDot >= 0) decSep = (str.length - lastDot - 1 === 3) ? "" : ".";
+    else if (lastComma >= 0) decSep = (str.length - lastComma - 1 === 3) ? "" : ",";
+    if (decSep) {
+      const idx = str.lastIndexOf(decSep);
+      str = str.slice(0, idx).replace(/[.,]/g, "") + "." + str.slice(idx + 1);
+    } else {
+      str = str.replace(/[.,]/g, "");
+    }
+    let n = parseFloat(str);
+    if (isNaN(n)) return 0;
+    return neg ? -n : n;
   }
 };
 
@@ -39,7 +58,7 @@ const sysLock = {
 };
 
 function doGet(e) {
-  if (e.parameter.action) {
+  if (e && e.parameter && e.parameter.action) {
     let action = e.parameter.action;
     let result = "";
     try {
@@ -64,13 +83,13 @@ function get112ViewData(fDate, tDate) {
   const filtered = data.filter(r => {
     let d = r[16]; // Cột Q
     if (!(d instanceof Date)) return false;
-    let iso = Utilities.formatDate(d, "GMT+7", "yyyy-MM-dd");
+    let iso = Utilities.formatDate(d, CFG.TZ, "yyyy-MM-dd");
     return (!fDate || iso >= fDate) && (!tDate || iso <= tDate);
   });
   return filtered.map(r => ({
     idHeThong: String(r[0] || ""),
     ngayDN: utils.formatDate(r[16]),
-    ngayISO: Utilities.formatDate(r[16], "GMT+7", "yyyy-MM-dd"),
+    ngayISO: Utilities.formatDate(r[16], CFG.TZ, "yyyy-MM-dd"),
     soLan: String(r[18] || ""),
     chuRung: String(r[2] || ""),
     nguoiNhan: String(r[3] || ""),
@@ -90,13 +109,13 @@ function getMainTableData(fDate, tDate) {
   const filtered = data.filter(r => {
     let d = r[11]; // Cột L
     if (!(d instanceof Date)) return false;
-    let iso = Utilities.formatDate(d, "GMT+7", "yyyy-MM-dd");
+    let iso = Utilities.formatDate(d, CFG.TZ, "yyyy-MM-dd");
     return (!fDate || iso >= fDate) && (!tDate || iso <= tDate);
   });
   return filtered.map(r => ({
     idHeThong: String(r[0] || ""),
     ngayDN: utils.formatDate(r[11]),
-    ngayISO: Utilities.formatDate(r[11], "GMT+7", "yyyy-MM-dd"),
+    ngayISO: Utilities.formatDate(r[11], CFG.TZ, "yyyy-MM-dd"),
     nguoiDN: String(r[5] || ""),
     chuRung: String(r[3] || ""),
     nguoiNhan: String(r[7] || ""),
@@ -111,24 +130,24 @@ function getMainTableData(fDate, tDate) {
 // ============================================================
 // NÚT 6: TẠO BÁO CÁO & SHEET NGÂN HÀNG
 // ============================================================
-function createFinalReportFromFilteredData(filteredRows, dateRange) {
+function createFinalReportFromFilteredData(filteredRows, dateRange, updateBank) {
+  let newSS = null;
   try {
     const folder = DriveApp.getFolderById(CFG.FOLDER_REPORT_ID);
-    const fileName = "BÁO CÁO ĐNTT (" + dateRange + ") - " + Utilities.formatDate(new Date(), "GMT+7", "HHmm");
-    const newSS = SpreadsheetApp.create(fileName);
-    const file = DriveApp.getFileById(newSS.getId());
-    folder.addFile(file);
-    DriveApp.getRootFolder().removeFile(file);
+    const fileName = "BÁO CÁO ĐNTT (" + dateRange + ") - " + Utilities.formatDate(new Date(), CFG.TZ, "HHmm");
+    newSS = SpreadsheetApp.create(fileName);
+    DriveApp.getFileById(newSS.getId()).moveTo(folder);
 
     const sheet1 = newSS.getSheets()[0];
     sheet1.setName("DeNghiThanhToanCK");
     renderSheet1Full(sheet1, filteredRows, dateRange);
 
     const sheet2 = newSS.insertSheet("BangKeChiTietCK");
-    renderSheet2Detail(sheet2, filteredRows, dateRange);
+    renderSheet2Detail(sheet2, filteredRows, dateRange, updateBank === true);
 
     return { success: true, url: newSS.getUrl() };
   } catch (e) {
+    if (newSS) { try { DriveApp.getFileById(newSS.getId()).setTrashed(true); } catch (x) {} }
     return { success: false, message: e.toString() };
   }
 }
@@ -174,9 +193,10 @@ function renderSheet1Full(sheet, filteredRows, dateRange) {
 // ============================================================
 // SHEET 2: CHI TIẾT VÀ ĐỊNH DẠNG TIME/NUMBER
 // ============================================================
-function renderSheet2Detail(sheet, filteredRows, dateRange) {
+function renderSheet2Detail(sheet, filteredRows, dateRange, updateBank) {
   const ss = SpreadsheetApp.getActive();
   const idSet = new Set(filteredRows.map(r => r.idHeThong));
+  const mapParent = new Map(filteredRows.map(r => [r.idHeThong, r]));
   const shCT = ss.getSheetByName(CFG.DNTT_CT);
   const ctData = shCT.getDataRange().getValues();
   
@@ -185,8 +205,7 @@ function renderSheet2Detail(sheet, filteredRows, dateRange) {
   const pcData = ssPC.getSheetByName(CFG.PC_SHEET).getDataRange().getValues();
   const ssHD = SpreadsheetApp.openById(CFG.HD_SS_ID);
   const hdData = ssHD.getSheetByName("HD_NCC").getDataRange().getValues();
-  const ssNH = SpreadsheetApp.openById(CFG.UPDATE_NH_SS_ID);
-  const shUpdateNH = ssNH.getSheetByName("Update_NganHang_DN");
+  const shUpdateNH = updateBank ? SpreadsheetApp.openById(CFG.UPDATE_NH_SS_ID).getSheetByName("Update_NganHang_DN") : null;
   
   const mapPC = new Map(pcData.slice(1).map(r => [utils.standardize(r[22]), r]));
   const mapHD = new Map(hdData.slice(1).map(r => [utils.standardize(r[2]), r]));
@@ -204,7 +223,7 @@ function renderSheet2Detail(sheet, filteredRows, dateRange) {
     if (idSet.has(parentId)) {
       let pc = mapPC.get(utils.standardize(ctRow[11])) || new Array(30).fill("");
       let hd = mapHD.get(utils.standardize(ctRow[19])) || new Array(30).fill("");
-      let parentInfo = filteredRows.find(f => f.idHeThong === parentId);
+      let parentInfo = mapParent.get(parentId);
 
       tempRows.push({
         data: [
@@ -242,7 +261,7 @@ function renderSheet2Detail(sheet, filteredRows, dateRange) {
     if (shUpdateNH) {
       // Xóa toàn bộ dữ liệu cũ từ dòng 2
       if (shUpdateNH.getLastRow() > 1) {
-        shUpdateNH.getRange(2, 1, shUpdateNH.getLastRow(), 33).clearContent();
+        shUpdateNH.getRange(2, 1, shUpdateNH.getLastRow() - 1, 33).clearContent();
       }
       
       let bankUpdateRows = tempRows.map(item => {
@@ -282,22 +301,32 @@ function runConfirmPayment(selectedIds, payDateStr) {
     const sh112 = ss.getSheetByName(CFG.DNTT_112);
     const shPC = SpreadsheetApp.openById(CFG.PC_SS_ID).getSheetByName(CFG.PC_SHEET);
     
-    const p = payDateStr.split('/'), 
-          prefixP = p[2] + p[1].padStart(2, '0') + p[0].padStart(2, '0'), 
-          dateForSheet = p[1] + "/" + p[0] + "/" + p[2];
-    
-    const idSet = new Set(selectedIds.map(id => String(id).trim()));
+    const m = String(payDateStr || "").trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (!m) throw new Error("Ngày thanh toán không hợp lệ. Định dạng đúng: dd/mm/yyyy.");
+    const dd = m[1].padStart(2, '0'), mm = m[2].padStart(2, '0'), yyyy = m[3];
+    const chk = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+    if (chk.getFullYear() != yyyy || chk.getMonth() != Number(mm) - 1 || chk.getDate() != Number(dd)) {
+      throw new Error("Ngày thanh toán không tồn tại: " + payDateStr);
+    }
+    const prefixP = yyyy + mm + dd;
+    const dateForSheet = new Date(Number(yyyy), Number(mm) - 1, Number(dd)); // Date thật, không phụ thuộc locale
+
+    const requestedIds = new Set(selectedIds.map(id => String(id).trim()));
+    const idSet = new Set(); // chỉ gồm hồ sơ CHƯA chốt
+    let skipped = 0;
 
     // 1. XỬ LÝ MẢNG 112
     const data112 = sh112.getRange(1, 1, sh112.getLastRow(), sh112.getLastColumn()).getValues();
     const mapSoLan = new Map();
     for (let k = 1; k < data112.length; k++) {
       let id = String(data112[k][0]).trim();
-      if (idSet.has(id)) { 
-        data112[k][20] = "Y"; 
-        mapSoLan.set(id, String(data112[k][18]).trim()); 
-      }
+      if (!requestedIds.has(id)) continue;
+      if (String(data112[k][20]).trim().toUpperCase() === "Y") { skipped++; continue; } // đã chốt trước đó
+      data112[k][20] = "Y";
+      idSet.add(id);
+      mapSoLan.set(id, String(data112[k][18]).trim());
     }
+    if (idSet.size === 0) return "⚠️ Không có hồ sơ nào cần chốt (" + skipped + " hồ sơ đã được chốt trước đó).";
 
     // 2. XỬ LÝ MẢNG NGUỒN
     const dataSrc = shSrc.getRange(1, 1, shSrc.getLastRow(), shSrc.getLastColumn()).getValues();
@@ -335,7 +364,7 @@ function runConfirmPayment(selectedIds, payDateStr) {
     shPC.getRange(1, 1, dataPC.length, dataPC[0].length).setValues(dataPC);
 
     SpreadsheetApp.flush(); 
-    return `✅ Đã chốt thành công ${idSet.size} hồ sơ & khóa Phiếu Cân!`;
+    return `✅ Đã chốt thành công ${idSet.size} hồ sơ & khóa Phiếu Cân!` + (skipped ? ` (Bỏ qua ${skipped} hồ sơ đã chốt trước đó)` : "");
   } catch (e) { 
     return "❌ Lỗi: " + e.toString(); 
   } finally { if (lock) lock.releaseLock(); }
@@ -345,6 +374,11 @@ function runConfirmPayment(selectedIds, payDateStr) {
  * NÚT 1: TÁCH PHIẾU CHI TIẾT (BẢN FIX LỖI CỘT L -> V VÀ TRẠNG THÁI Y)
  */
 function runProcessDetail() {
+  const lock = sysLock.acquire();
+  try { return _runProcessDetail(); } finally { lock.releaseLock(); }
+}
+
+function _runProcessDetail() {
   const ss = SpreadsheetApp.getActive();
   const shSrc = ss.getSheetByName(CFG.DNTT_SRC);
   const shCT = ss.getSheetByName(CFG.DNTT_CT);
@@ -361,6 +395,9 @@ function runProcessDetail() {
   let countAdd = 0;
   let countUpdate = 0;
 
+  const splitIdx = srcData[0].indexOf(CFG.SPLIT_COL);
+  if (splitIdx < 0) return "❌ Không tìm thấy cột \"" + CFG.SPLIT_COL + "\" trong sheet " + CFG.DNTT_SRC;
+
   for (let i = 1; i < srcData.length; i++) {
     let r = srcData[i];
     let idKey = String(r[0]).trim();
@@ -370,8 +407,10 @@ function runProcessDetail() {
     let ngayDeNghiNguon = r[11]; 
 
     // CHỈ XỬ LÝ NẾU CHƯA CHỐT (KHÁC Y VÀ KHÁC ĐÓNG TT)
-    if (String(r[17]).toUpperCase() !== "Y" && String(r[14]) !== "Đóng TT") {
-      let listPC = String(r[srcData[0].indexOf(CFG.SPLIT_COL)] || "").split(/[,;|]/).map(x => x.trim()).filter(Boolean);
+    // Cũng bỏ qua hồ sơ đã lên 112 ("Đã ĐNTT") để không lùi trạng thái
+    if (String(r[17]).toUpperCase() !== "Y" && String(r[14]) !== "Đóng TT" && String(r[14]) !== "Đã ĐNTT") {
+      let listPC = String(r[splitIdx] || "").split(/[,;|]/).map(x => x.trim()).filter(Boolean);
+      if (listPC.length === 0) continue; // không có phiếu cân => không đánh dấu trạng thái
       
       listPC.forEach((soP, idx) => {
         let newID = idKey + "-" + (idx + 1);
@@ -429,7 +468,7 @@ function runProcessDetail() {
   }
 
   if (countAdd > 0 || countUpdate > 0) {
-    if (shCT.getLastRow() > 1) shCT.getRange(2, 1, shCT.getLastRow() - 1, 22).clearContent();
+    // Không clear trước khi ghi: số dòng chỉ tăng, tránh mất dữ liệu nếu lỗi giữa chừng
     shCT.getRange(2, 1, currentCTRows.length, 22).setValues(currentCTRows);
     shSrc.getRange(1, 1, srcData.length, srcData[0].length).setValues(srcData);
     shPC.getRange(1, 1, pcValues.length, pcValues[0].length).setValues(pcValues);
@@ -445,6 +484,11 @@ function runProcessDetail() {
  * NÚT 2: TỔNG HỢP 112 (BẢN HOÀN THIỆN DIỄN GIẢI CỘT P)
  */
 function runCreate112() {
+  const lock = sysLock.acquire();
+  try { return _runCreate112(); } finally { lock.releaseLock(); }
+}
+
+function _runCreate112() {
   const ss = SpreadsheetApp.getActive();
   const shSrc = ss.getSheetByName(CFG.DNTT_SRC);
   const sh112 = ss.getSheetByName(CFG.DNTT_112);
@@ -507,7 +551,7 @@ function runCreate112() {
     let soHD = String(data112[i][8] || "").replace(/'/g, "");
     let hdKey = utils.standardize(soHD);
     let ngayHDRaw = data112[i][9];
-    let ngayHDFmt = (ngayHDRaw instanceof Date) ? Utilities.formatDate(ngayHDRaw, "GMT+7", "dd.MM.yyyy") : String(ngayHDRaw || "");
+    let ngayHDFmt = (ngayHDRaw instanceof Date) ? Utilities.formatDate(ngayHDRaw, CFG.TZ, "dd.MM.yyyy") : String(ngayHDRaw || "");
 
     // A. Lọc dữ liệu chi tiết của riêng hồ sơ này
     let currentDetails = ctGroupedById[id] || [];
@@ -577,21 +621,9 @@ function runCreate112() {
 }
 
 function onOpen() {
-  var ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 QUẢN LÝ HAK') // Tên Menu chính
+  SpreadsheetApp.getUi().createMenu('🚀 QUẢN LÝ HAK')
       .addItem('1. Tách Phiếu Chi Tiết', 'runProcessDetail')
       .addItem('2. Tổng Hợp 112', 'runCreate112')
-      .addSeparator() // Đường kẻ ngăn cách
-      .addItem('3. Chốt Thanh Toán', 'showPayDialog') // Gọi một hàm mở thông báo
       .addToUi();
-}
-
-// Hàm phụ để mở hộp thoại nhập ngày nếu cần
-function showPayDialog() {
-  var ui = SpreadsheetApp.getUi();
-  var result = ui.prompt('Xác nhận chốt', 'Nhập ngày thanh toán (dd/mm/yyyy):', ui.ButtonSet.OK_CANCEL);
-  if (result.getSelectedButton() == ui.Button.OK) {
-    // Gọi hàm runConfirmPayment với dữ liệu từ prompt
-    // Ví dụ: runConfirmPayment(selectedIds, result.getResponseText());
-  }
+  // Chốt thanh toán thực hiện trên giao diện web (cần chọn danh sách hồ sơ).
 }
