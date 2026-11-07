@@ -12,7 +12,9 @@ const CFG = {
   PC_SHEET: "PhieuCan_DN",
   SPLIT_COL: "Số phiếu cân",
   LAN_TT: "Lanthanhtoan",
-  TZ: "Asia/Ho_Chi_Minh"
+  TZ: "Asia/Ho_Chi_Minh",
+  TK_TRICH_NO: "8619299999", // Tài khoản trích nợ (dùng cho file ngân hàng và UNC)
+  TK_THU_PHI: "8619299999"   // Tài khoản thu phí (UNC) - sửa nếu khác tài khoản trích nợ
 };
 
 
@@ -282,7 +284,7 @@ function updateBankFile(filteredRows) {
       row[2] = b.ngayCK; // Ngày hạch toán (Lấy từ ngày chốt)
       row[3] = b.ngayCK; // Ngày chứng từ
       row[4] = "'" + b.soPhieuCan;
-      row[5] = "'8619299999"; row[6] = "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam - Quảng Nam - VND"; row[7] = 43;
+      row[5] = "'" + CFG.TK_TRICH_NO; row[6] = "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam - Quảng Nam - VND"; row[7] = 43;
       row[8] = b.noiDung || ("Thanh toán phiếu cân " + b.soPhieuCan); // Cột I diễn giải
       row[9] = "'" + String(b.hd[6] || ""); row[10] = b.hd[4]; row[11] = b.hd[5];
       row[12] = "'" + String(b.hd[15] || ""); row[13] = b.hd[16]; row[14] = b.hd[10];

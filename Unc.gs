@@ -5,7 +5,6 @@
  */
 const UNC_CFG = {
   SS_ID: "1v6MlQaMF4N8BoTUqaraInxJFPUKcA7u3z_zVle8cXw8", // Sheet mẫu UNC_NGANHANG_HAK (UP_UNC, TH_UNC, DM_TKNH)
-  TK_TRICH_NO: "5622289731",              // Tài khoản trích nợ (theo file mẫu) - sửa nếu đổi tài khoản
   PHUONG_THUC: "O - Chuyển ngoài BIDV",
   LOAI_TIEN: "VND",
   BEN_CHIU_PHI: "O - Bên chuyển",
@@ -121,8 +120,8 @@ function createUpUncFile(selectedIds) {
       if (bank.indexOf("BIDV") >= 0) warnings.push("Người nhận tại BIDV: " + label + " - mẫu đang để \"" + UNC_CFG.PHUONG_THUC + "\", hãy kiểm tra phương thức chuyển.");
       total += tien;
       body.push([
-        String(body.length + 1), UNC_CFG.PHUONG_THUC, UNC_CFG.TK_TRICH_NO, ten, stk, bank, tien, UNC_CFG.LOAI_TIEN,
-        nd, "", "", "", "", UNC_CFG.BEN_CHIU_PHI, UNC_CFG.TK_TRICH_NO, effDate, batchId.get(lanOf(r)), newId()
+        String(body.length + 1), UNC_CFG.PHUONG_THUC, CFG.TK_TRICH_NO, ten, stk, bank, tien, UNC_CFG.LOAI_TIEN,
+        nd, "", "", "", "", UNC_CFG.BEN_CHIU_PHI, CFG.TK_THU_PHI, effDate, batchId.get(lanOf(r)), newId()
       ]);
     });
     if (!body.length) return { success: false, message: "Không có dòng hợp lệ để xuất.", warnings: warnings };
@@ -146,7 +145,7 @@ function createUpUncFile(selectedIds) {
     // --- TH_UNC: mỗi Lần = 1 lô ---
     const th = [];
     batchId.forEach((id, lan) => {
-      th.push([id, effDate, UNC_CFG.PHUONG_THUC, UNC_CFG.TK_TRICH_NO, UNC_CFG.LOAI_TIEN, UNC_CFG.TK_TRICH_NO, utils.parseNum(lan), UNC_CFG.BEN_CHIU_PHI]);
+      th.push([id, effDate, UNC_CFG.PHUONG_THUC, CFG.TK_TRICH_NO, UNC_CFG.LOAI_TIEN, CFG.TK_THU_PHI, utils.parseNum(lan), UNC_CFG.BEN_CHIU_PHI]);
     });
     if (sh2.getLastRow() >= 2) sh2.getRange(2, 1, sh2.getLastRow() - 1, 8).clearContent();
     ensureRows(sh2, 1 + th.length);
