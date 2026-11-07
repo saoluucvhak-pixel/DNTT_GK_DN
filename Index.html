@@ -19,6 +19,7 @@
     .btn-view { background: linear-gradient(135deg, #6f42c1, #59359a); }
     .btn-print { background: linear-gradient(135deg, #dc3545, #b02a37); }
     .btn-report { background: linear-gradient(135deg, #198754, #146c43); border: 1px solid #fff; }
+    .btn-unc { background: linear-gradient(135deg, #0dcaf0, #0aa2c0); color: #000 !important; }
     .btn-payment { background: linear-gradient(135deg, #ffc107, #ff9800); color: #000 !important; font-weight: 800 !important; border: 1px solid #d39e00; }
 
     /* Table Card */
@@ -70,8 +71,11 @@
     <div class="col-md-2"><button onclick="show112View()" class="btn-hak btn-view w-100"><i class="fas fa-list-check me-2"></i>2. LẬP ĐỀ NGHỊ THANH TOÁN</button></div>
     <div class="col-md-2" id="btnPrintArea" style="display:none;"><button onclick="window.print()" class="btn-hak btn-print w-100"><i class="fas fa-print me-2"></i>3. IN BẢNG</button></div>
     <div class="col-md-2" id="btnReportArea" style="display:none;"><button onclick="handleCreateReportWeb()" class="btn-hak btn-report w-100"><i class="fas fa-file-excel me-2"></i>4. XUẤT BÁO CÁO</button></div>
-    <div class="col-md-2" id="btnPaymentArea" style="display:none;"><button onclick="handleConfirmPaymentWeb()" class="btn-hak btn-payment w-100"><i class="fas fa-lock me-2"></i>5. CHỐT & KHÓA</button></div>
+    <div class="col-md-2" id="btnUncArea" style="display:none;"><button onclick="handleCreateUncWeb()" class="btn-hak btn-unc w-100"><i class="fas fa-building-columns me-2"></i>5. XUẤT UP_UNC (NGÂN HÀNG)</button></div>
+    <div class="col-md-2" id="btnPaymentArea" style="display:none;"><button onclick="handleConfirmPaymentWeb()" class="btn-hak btn-payment w-100"><i class="fas fa-lock me-2"></i>6. CHỐT & KHÓA</button></div>
   </div>
+
+  <div id="uncResult" class="alert alert-success no-print" style="display:none;"></div>
 
   <div class="table-card">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
@@ -139,7 +143,7 @@
   }
 
   function toggleExtraButtons(show) {
-    const areas = ['btnPrintArea', 'btnReportArea', 'btnPaymentArea'];
+    const areas = ['btnPrintArea', 'btnReportArea', 'btnUncArea', 'btnPaymentArea'];
     areas.forEach(id => document.getElementById(id).style.display = show ? 'block' : 'none');
   }
 
@@ -266,6 +270,30 @@
       showLoading(false);
       alert("Lỗi báo cáo: " + err);
     }).createFinalReportFromFilteredData(currentFilteredData, range, updateBank);
+  }
+
+  function handleCreateUncWeb() {
+    if (!currentFilteredData.length) return alert("Hãy lọc dữ liệu trước khi xuất UNC!");
+    const total = currentFilteredData.reduce((s, r) => s + Number(r.soTien || 0), 0);
+    if (!confirm("Xuất file UP_UNC cho " + currentFilteredData.length + " khoản chuyển, tổng " + total.toLocaleString() + " VNĐ?")) return;
+    showLoading(true, "Đang tạo file UP_UNC theo mẫu ngân hàng...");
+    google.script.run.withSuccessHandler(res => {
+      showLoading(false);
+      const box = document.getElementById('uncResult');
+      if (!res || !res.success) {
+        box.className = 'alert alert-danger no-print';
+        box.innerHTML = '❌ ' + esc((res && res.message) || 'Lỗi không xác định') + (res && res.warnings ? '<ul class="mb-0">' + res.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '');
+      } else {
+        box.className = 'alert alert-success no-print';
+        box.innerHTML = '✅ Đã tạo UP_UNC: <b>' + res.count + '</b> khoản, tổng <b>' + Number(res.total).toLocaleString() + '</b> VNĐ. ' +
+          '<a href="' + esc(res.url) + '" target="_blank">Mở Google Sheet</a> | <a href="' + esc(res.xlsxUrl) + '" target="_blank"><b>Tải file .xlsx để up ngân hàng</b></a>' +
+          (res.warnings && res.warnings.length ? '<div class="mt-2 text-danger"><b>Cần kiểm tra:</b><ul class="mb-0">' + res.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '');
+      }
+      box.style.display = 'block';
+    }).withFailureHandler(err => {
+      showLoading(false);
+      alert("Lỗi xuất UNC: " + err);
+    }).createUpUncFile(currentFilteredData.map(r => r.idHeThong));
   }
 
   function createSearchableDropdown(data, type) {
