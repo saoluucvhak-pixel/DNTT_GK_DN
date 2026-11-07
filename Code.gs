@@ -130,7 +130,7 @@ function getMainTableData(fDate, tDate) {
 // ============================================================
 // NÚT 6: TẠO BÁO CÁO & SHEET NGÂN HÀNG
 // ============================================================
-function createFinalReportFromFilteredData(filteredRows, dateRange, updateBank) {
+function createFinalReportFromFilteredData(filteredRows, dateRange) {
   let newSS = null;
   try {
     const folder = DriveApp.getFolderById(CFG.FOLDER_REPORT_ID);
@@ -143,7 +143,7 @@ function createFinalReportFromFilteredData(filteredRows, dateRange, updateBank) 
     renderSheet1Full(sheet1, filteredRows, dateRange);
 
     const sheet2 = newSS.insertSheet("BangKeChiTietCK");
-    renderSheet2Detail(sheet2, filteredRows, dateRange, updateBank === true);
+    renderSheet2Detail(sheet2, filteredRows, dateRange);
 
     return { success: true, url: newSS.getUrl() };
   } catch (e) {
@@ -193,50 +193,47 @@ function renderSheet1Full(sheet, filteredRows, dateRange) {
 // ============================================================
 // SHEET 2: CHI TIẾT VÀ ĐỊNH DẠNG TIME/NUMBER
 // ============================================================
-function renderSheet2Detail(sheet, filteredRows, dateRange, updateBank) {
+/** Gom dữ liệu chi tiết (phiếu cân + hợp đồng) của các hồ sơ đã lọc - dùng chung cho Sheet 2 và File ngân hàng */
+function collectDetailRows_(filteredRows) {
   const ss = SpreadsheetApp.getActive();
   const idSet = new Set(filteredRows.map(r => r.idHeThong));
   const mapParent = new Map(filteredRows.map(r => [r.idHeThong, r]));
-  const shCT = ss.getSheetByName(CFG.DNTT_CT);
-  const ctData = shCT.getDataRange().getValues();
-  
-  // Kết nối các file ngoại vi
-  const ssPC = SpreadsheetApp.openById(CFG.PC_SS_ID);
-  const pcData = ssPC.getSheetByName(CFG.PC_SHEET).getDataRange().getValues();
-  const ssHD = SpreadsheetApp.openById(CFG.HD_SS_ID);
-  const hdData = ssHD.getSheetByName("HD_NCC").getDataRange().getValues();
-  const shUpdateNH = updateBank ? SpreadsheetApp.openById(CFG.UPDATE_NH_SS_ID).getSheetByName("Update_NganHang_DN") : null;
-  
+  const ctData = ss.getSheetByName(CFG.DNTT_CT).getDataRange().getValues();
+  const pcData = SpreadsheetApp.openById(CFG.PC_SS_ID).getSheetByName(CFG.PC_SHEET).getDataRange().getValues();
+  const hdData = SpreadsheetApp.openById(CFG.HD_SS_ID).getSheetByName("HD_NCC").getDataRange().getValues();
   const mapPC = new Map(pcData.slice(1).map(r => [utils.standardize(r[22]), r]));
   const mapHD = new Map(hdData.slice(1).map(r => [utils.standardize(r[2]), r]));
+
+  const tempRows = [];
+  ctData.slice(1).forEach(ctRow => {
+    let parentId = String(ctRow[1]).trim();
+    if (!idSet.has(parentId)) return;
+    let pc = mapPC.get(utils.standardize(ctRow[11])) || new Array(30).fill("");
+    let hd = mapHD.get(utils.standardize(ctRow[19])) || new Array(30).fill("");
+    let parentInfo = mapParent.get(parentId);
+    tempRows.push({
+      data: [
+        0, parentInfo?.soLan, "'" + ctRow[11], utils.formatDate(ctRow[20]), utils.formatDate(pc[1]),
+        pc[13], "'" + ctRow[19], pc[5], ctRow[3], "'" + (hd[6]||""), hd[10], "'" + (hd[11]||""),
+        hd[5], hd[18], pc[2], pc[4], utils.parseNum(pc[7]), utils.parseNum(pc[8]),
+        utils.parseNum(pc[9]), utils.parseNum(pc[9])/1000, utils.parseNum(pc[23]),
+        utils.parseNum(pc[25]), pc[14], hd[16], "'" + (hd[15]||""), ctRow[2]
+      ],
+      bank: { ngayCK: utils.formatDate(ctRow[20]), soPhieuCan: ctRow[11], noiDung: parentInfo?.noiDungCK, thanhTien: ctRow[16], soHD: ctRow[19], hd: hd }
+    });
+  });
+  return tempRows;
+}
+
+function renderSheet2Detail(sheet, filteredRows, dateRange) {
+  const tempRows = collectDetailRows_(filteredRows);
 
   sheet.clear();
   sheet.getRange("A1:Z1").merge().setValue("BẢNG KÊ CHI TIẾT CHUYỂN KHOẢN").setFontSize(16).setFontWeight("bold").setHorizontalAlignment("center");
   sheet.getRange("A2:Z2").merge().setValue("Thời gian: " + dateRange).setFontStyle("italic").setHorizontalAlignment("center");
-  
+
   const headers = ["STT", "Lần TT", "Số phiếu cân", "Ngày CK", "Ngày nhập", "Đại lý", "Số hợp đồng", "Số xe", "Họ tên chủ rừng", "CCCD Chủ rừng", "Tên người thụ hưởng", "CCCD Người thụ hưởng", "Địa chỉ Chủ rừng", "Địa chỉ rừng", "Giờ vào", "Giờ ra", "KL hàng + xe", "Bì", "KL_KG", "KL_Tấn", "Đơn giá", "Thành tiền", "Nguồn gốc", "Ngân hàng", "Số tài khoản", "Thời gian nhập liệu"];
   sheet.getRange(4, 1, 1, headers.length).setValues([headers]).setBackground("#cfe2f3").setFontWeight("bold").setBorder(true, true, true, true, true, true).setHorizontalAlignment("center");
-
-  let tempRows = []; 
-  ctData.slice(1).forEach(ctRow => {
-    let parentId = String(ctRow[1]).trim();
-    if (idSet.has(parentId)) {
-      let pc = mapPC.get(utils.standardize(ctRow[11])) || new Array(30).fill("");
-      let hd = mapHD.get(utils.standardize(ctRow[19])) || new Array(30).fill("");
-      let parentInfo = mapParent.get(parentId);
-
-      tempRows.push({
-        data: [
-          0, parentInfo?.soLan, "'" + ctRow[11], utils.formatDate(ctRow[20]), utils.formatDate(pc[1]), 
-          pc[13], "'" + ctRow[19], pc[5], ctRow[3], "'" + (hd[6]||""), hd[10], "'" + (hd[11]||""), 
-          hd[5], hd[18], pc[2], pc[4], utils.parseNum(pc[7]), utils.parseNum(pc[8]), 
-          utils.parseNum(pc[9]), utils.parseNum(pc[9])/1000, utils.parseNum(pc[23]), 
-          utils.parseNum(pc[25]), pc[14], hd[16], "'" + (hd[15]||""), ctRow[2]
-        ],
-        bank: { ngayCK: utils.formatDate(ctRow[20]), soPhieuCan: ctRow[11], noiDung: parentInfo?.noiDungCK, thanhTien: ctRow[16], soHD: ctRow[19], hd: hd }
-      });
-    }
-  });
 
   if (tempRows.length > 0) {
     let finalRows = tempRows.map((item, index) => { item.data[0] = index + 1; return item.data; });
@@ -256,38 +253,50 @@ function renderSheet2Detail(sheet, filteredRows, dateRange, updateBank) {
     sheet.getRange(totalRow, 20).setFormulaR1C1(`=SUM(R5C:R[-1]C)`);
     sheet.getRange(totalRow, 22).setFormulaR1C1(`=SUM(R5C:R[-1]C)`);
     sheet.getRange(totalRow, 1, 1, headers.length).setBackground("#fff2cc").setBorder(true, true, true, true, true, true);
-
-    // --- XỬ LÝ FILE UPDATE NGÂN HÀNG (XÓA VÀ GHI MỚI) ---
-    if (shUpdateNH) {
-      // Xóa toàn bộ dữ liệu cũ từ dòng 2
-      if (shUpdateNH.getLastRow() > 1) {
-        shUpdateNH.getRange(2, 1, shUpdateNH.getLastRow() - 1, 33).clearContent();
-      }
-      
-      let bankUpdateRows = tempRows.map(item => {
-        let b = item.bank;
-        let row = new Array(33).fill("");
-        row[0] = ""; // Cột A bỏ trống
-        row[1] = 0;       // Cột B: Giá trị mặc định là 0 (Số nguyên)
-        row[2] = b.ngayCK; // Ngày hạch toán (Lấy từ ngày chốt)
-        row[3] = b.ngayCK; // Ngày chứng từ
-        row[4] = "'" + b.soPhieuCan;
-        row[5] = "'8619299999"; row[6] = "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam - Quảng Nam - VND"; row[7] = 43;
-        row[8] = b.noiDung || ("Thanh toán phiếu cân " + b.soPhieuCan); // Cột I diễn giải
-        row[9] = "'" + String(b.hd[6] || ""); row[10] = b.hd[4]; row[11] = b.hd[5];
-        row[12] = "'" + String(b.hd[15] || ""); row[13] = b.hd[16]; row[14] = b.hd[10];
-        row[15] = "'" + String(b.hd[11] || ""); row[19] = "VND"; row[21] = b.noiDung; 
-        row[22] = "33111"; row[23] = "1121"; row[24] = b.thanhTien; row[32] = "'" + b.soHD;
-        return row;
-      });
-      shUpdateNH.getRange(2, 1, bankUpdateRows.length, 33).setValues(bankUpdateRows);
-    }
   }
 }
 
+// ============================================================
+// NÚT 4: FILE NGÂN HÀNG (XÓA VÀ GHI MỚI sheet Update_NganHang_DN)
+// ============================================================
+function updateBankFile(filteredRows) {
+  const lock = sysLock.acquire();
+  try {
+    const tempRows = collectDetailRows_(filteredRows || []);
+    if (!tempRows.length) return { success: false, message: "Không có dữ liệu chi tiết để ghi file ngân hàng." };
 
+    const ssNH = SpreadsheetApp.openById(CFG.UPDATE_NH_SS_ID);
+    const shUpdateNH = ssNH.getSheetByName("Update_NganHang_DN");
+    if (!shUpdateNH) return { success: false, message: "Không tìm thấy sheet Update_NganHang_DN." };
 
+    // Xóa toàn bộ dữ liệu cũ từ dòng 2
+    if (shUpdateNH.getLastRow() > 1) {
+      shUpdateNH.getRange(2, 1, shUpdateNH.getLastRow() - 1, 33).clearContent();
+    }
 
+    const bankUpdateRows = tempRows.map(item => {
+      let b = item.bank;
+      let row = new Array(33).fill("");
+      row[0] = ""; // Cột A bỏ trống
+      row[1] = 0;       // Cột B: Giá trị mặc định là 0 (Số nguyên)
+      row[2] = b.ngayCK; // Ngày hạch toán (Lấy từ ngày chốt)
+      row[3] = b.ngayCK; // Ngày chứng từ
+      row[4] = "'" + b.soPhieuCan;
+      row[5] = "'8619299999"; row[6] = "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam - Quảng Nam - VND"; row[7] = 43;
+      row[8] = b.noiDung || ("Thanh toán phiếu cân " + b.soPhieuCan); // Cột I diễn giải
+      row[9] = "'" + String(b.hd[6] || ""); row[10] = b.hd[4]; row[11] = b.hd[5];
+      row[12] = "'" + String(b.hd[15] || ""); row[13] = b.hd[16]; row[14] = b.hd[10];
+      row[15] = "'" + String(b.hd[11] || ""); row[19] = "VND"; row[21] = b.noiDung;
+      row[22] = "33111"; row[23] = "1121"; row[24] = b.thanhTien; row[32] = "'" + b.soHD;
+      return row;
+    });
+    shUpdateNH.getRange(2, 1, bankUpdateRows.length, 33).setValues(bankUpdateRows);
+    SpreadsheetApp.flush();
+    return { success: true, count: bankUpdateRows.length, url: ssNH.getUrl() };
+  } catch (e) {
+    return { success: false, message: e.toString() };
+  } finally { lock.releaseLock(); }
+}
 
 // ============================================================
 // NÚT 8: CHỐT THANH TOÁN (KHÓA DỮ LIỆU ĐA TẦNG)

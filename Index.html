@@ -19,7 +19,8 @@
     .btn-view { background: linear-gradient(135deg, #6f42c1, #59359a); }
     .btn-print { background: linear-gradient(135deg, #dc3545, #b02a37); }
     .btn-report { background: linear-gradient(135deg, #198754, #146c43); border: 1px solid #fff; }
-    .btn-unc { background: linear-gradient(135deg, #0dcaf0, #0aa2c0); color: #000 !important; }
+    .btn-bank { background: linear-gradient(135deg, #0dcaf0, #0aa2c0); color: #000 !important; }
+    .btn-unc { background: linear-gradient(135deg, #fd7e14, #e8590c); }
     .btn-payment { background: linear-gradient(135deg, #ffc107, #ff9800); color: #000 !important; font-weight: 800 !important; border: 1px solid #d39e00; }
 
     /* Table Card */
@@ -69,9 +70,9 @@
   <div class="row g-2 mb-3 text-center no-print">
     <div class="col-md-2"><button onclick="showMainView()" class="btn-hak btn-main w-100"><i class="fas fa-file-invoice-dollar me-2"></i>1. ĐỀ NGHỊ THANH TOÁN</button></div>
     <div class="col-md-2"><button onclick="show112View()" class="btn-hak btn-view w-100"><i class="fas fa-list-check me-2"></i>2. LẬP ĐỀ NGHỊ THANH TOÁN</button></div>
-    <div class="col-md-2" id="btnPrintArea" style="display:none;"><button onclick="window.print()" class="btn-hak btn-print w-100"><i class="fas fa-print me-2"></i>3. IN BẢNG</button></div>
-    <div class="col-md-2" id="btnReportArea" style="display:none;"><button onclick="handleCreateReportWeb()" class="btn-hak btn-report w-100"><i class="fas fa-file-excel me-2"></i>4. XUẤT BÁO CÁO</button></div>
-    <div class="col-md-2" id="btnUncArea" style="display:none;"><button onclick="handleCreateUncWeb()" class="btn-hak btn-unc w-100"><i class="fas fa-building-columns me-2"></i>5. XUẤT UP_UNC (NGÂN HÀNG)</button></div>
+    <div class="col-md-2" id="btnReportArea" style="display:none;"><button onclick="handleCreateReportWeb()" class="btn-hak btn-report w-100"><i class="fas fa-file-excel me-2"></i>3. XUẤT BÁO CÁO</button></div>
+    <div class="col-md-2" id="btnBankArea" style="display:none;"><button onclick="handleBankFileWeb()" class="btn-hak btn-bank w-100"><i class="fas fa-building-columns me-2"></i>4. FILE NGÂN HÀNG</button></div>
+    <div class="col-md-2" id="btnUncArea" style="display:none;"><button onclick="handleCreateUncWeb()" class="btn-hak btn-unc w-100"><i class="fas fa-file-invoice me-2"></i>5. TẠO UNC</button></div>
     <div class="col-md-2" id="btnPaymentArea" style="display:none;"><button onclick="handleConfirmPaymentWeb()" class="btn-hak btn-payment w-100"><i class="fas fa-lock me-2"></i>6. CHỐT & KHÓA</button></div>
   </div>
 
@@ -143,7 +144,7 @@
   }
 
   function toggleExtraButtons(show) {
-    const areas = ['btnPrintArea', 'btnReportArea', 'btnUncArea', 'btnPaymentArea'];
+    const areas = ['btnReportArea', 'btnBankArea', 'btnUncArea', 'btnPaymentArea'];
     areas.forEach(id => document.getElementById(id).style.display = show ? 'block' : 'none');
   }
 
@@ -259,7 +260,6 @@
 
   function handleCreateReportWeb() {
     if (!currentFilteredData.length) return alert("Hãy lọc dữ liệu trước khi xuất báo cáo!");
-    const updateBank = confirm("Có cập nhật luôn file NGÂN HÀNG (xoá dữ liệu cũ của sheet Update_NganHang_DN và ghi mới) không?\n\nOK = Có, Cancel = Chỉ xuất báo cáo.");
     showLoading(true, "Đang khởi tạo File Báo cáo & Sheet chi tiết...");
     const range = document.getElementById('fromDate').value + " đến " + document.getElementById('toDate').value;
     google.script.run.withSuccessHandler(res => {
@@ -269,7 +269,22 @@
     }).withFailureHandler(err => {
       showLoading(false);
       alert("Lỗi báo cáo: " + err);
-    }).createFinalReportFromFilteredData(currentFilteredData, range, updateBank);
+    }).createFinalReportFromFilteredData(currentFilteredData, range);
+  }
+
+  function handleBankFileWeb() {
+    if (!currentFilteredData.length) return alert("Hãy lọc dữ liệu trước khi cập nhật file ngân hàng!");
+    if (!confirm("Cập nhật FILE NGÂN HÀNG cho " + currentFilteredData.length + " hồ sơ?\n\nDữ liệu cũ của sheet Update_NganHang_DN sẽ bị XOÁ và ghi mới.")) return;
+    showLoading(true, "Đang ghi dữ liệu vào file ngân hàng...");
+    google.script.run.withSuccessHandler(res => {
+      showLoading(false);
+      if (res && res.success) {
+        if (confirm("✅ Đã ghi " + res.count + " dòng vào file ngân hàng. Mở file ngay?")) window.open(res.url, '_blank');
+      } else alert("Lỗi: " + ((res && res.message) || "không xác định"));
+    }).withFailureHandler(err => {
+      showLoading(false);
+      alert("Lỗi cập nhật file ngân hàng: " + err);
+    }).updateBankFile(currentFilteredData);
   }
 
   function handleCreateUncWeb() {
