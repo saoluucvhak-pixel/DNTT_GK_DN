@@ -288,6 +288,39 @@
     }).createFinalReportFromFilteredData(currentFilteredData, range);
   }
 
+  let lastUnc = null, lastBank = null;
+
+  // Tải trực tiếp từ dữ liệu base64 (dự phòng - có thể bị trình duyệt chặn trong khung Apps Script)
+  function downloadXlsx(res) {
+    if (!res || !res.base64) return;
+    const bin = atob(res.base64), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = res.fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+  function downloadUnc() { downloadXlsx(lastUnc); }
+  function downloadBank() { downloadXlsx(lastBank); }
+
+  // Hiển thị kết quả: nút tải (link Drive) + tải trực tiếp dự phòng, luôn cuộn tới và báo bằng hộp thoại
+  function showFileResult(res, summaryHtml, plainMsg, kind, warningsHtml) {
+    const box = document.getElementById('uncResult');
+    box.className = 'alert alert-success no-print';
+    box.innerHTML = '✅ ' + summaryHtml +
+      '<div class="mt-2 d-flex flex-wrap gap-2">' +
+      '<a class="btn btn-sm btn-success" href="' + esc(res.downloadUrl) + '" target="_blank"><i class="fas fa-download"></i> Tải file .xlsx</a>' +
+      '<a class="btn btn-sm btn-outline-primary" href="' + esc(res.fileUrl) + '" target="_blank">Mở trong Drive</a>' +
+      '<button class="btn btn-sm btn-outline-success" onclick="' + (kind === 'bank' ? 'downloadBank()' : 'downloadUnc()') + '">Tải trực tiếp (dự phòng)</button>' +
+      '</div>' + (warningsHtml || '');
+    box.style.display = 'block';
+    try { box.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+    try { (kind === 'bank' ? downloadBank : downloadUnc)(); } catch (e) {}
+    setTimeout(() => alert('✅ ' + plainMsg + '\n\nFile đã lưu trong thư mục báo cáo trên Drive. Nếu trình duyệt chưa tự tải, bấm nút "Tải file .xlsx" trong khung màu xanh phía trên bảng.'), 300);
+  }
+
   function handleBankFileWeb() {
     if (!currentFilteredData.length) return alert("Hãy lọc dữ liệu trước khi tạo file ngân hàng!");
     if (!confirm("Tạo FILE NGÂN HÀNG cho " + currentFilteredData.length + " hồ sơ?\n\nDữ liệu cũ của sheet Update_NganHang_DN sẽ bị XOÁ và ghi mới.")) return;
