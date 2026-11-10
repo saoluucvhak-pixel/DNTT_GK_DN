@@ -6,7 +6,7 @@
 const UNC_CFG = {
   SS_ID: "1v6MlQaMF4N8BoTUqaraInxJFPUKcA7u3z_zVle8cXw8", // Sheet mẫu UNC_NGANHANG_HAK (UP_UNC, TH_UNC, DM_TKNH)
   PHUONG_THUC_NGOAI: "O - Chuyển ngoài BIDV",   // người nhận ở ngân hàng khác
-  PHUONG_THUC_TRONG: "I - Chuyển trong BIDV",   // người nhận tại BIDV (kiểm tra lại đúng nội dung theo mẫu của ngân hàng)
+  PHUONG_THUC_TRONG: "I - Chuyển trong BIDV",   // người nhận tại BIDV (nội dung chuẩn theo ngân hàng)
   LOAI_TIEN: "VND",
   BEN_CHIU_PHI: "O - Bên chuyển",
   HEADERS: ["STT", "PhuongThucChuyenTien", "TkTrichNo", "TenNguoiHuong", "SoTKNguoiHuong", "NganHangHuong", "SoTien", "LoaiTien", "NoiDung", "A", "B", "C", "D", "BenChiuPhi", "TaiKhoanThuPhi", "NgayHieuLuc", "ID_UNC", "ID_UNCCT"],
@@ -125,7 +125,7 @@ function createUpUncFile(selectedIds, opts) {
     rows.sort((a, b) => (utils.parseNum(lanOf(a)) - utils.parseNum(lanOf(b))));
 
     const body = [];
-    let total = 0, unmatchedBank = 0, countTrong = 0;
+    let total = 0, unmatchedBank = 0;
     rows.forEach(r => {
       const ten = String(r[3] || "").trim().toUpperCase();
       const stk = String(r[5] || "").replace(/[\s'.\-]/g, "");
@@ -137,7 +137,6 @@ function createUpUncFile(selectedIds, opts) {
       const bank = findBankFull(r[4]);
       if (!bank) { unmatchedBank++; warnings.push("Không nhận diện được ngân hàng \"" + (r[4] || "") + "\": " + label + " (để trống cột NganHangHuong, tính là chuyển ngoài)"); }
       const method = _uncMethod(bank);
-      if (method === UNC_CFG.PHUONG_THUC_TRONG) countTrong++;
       const lan = lanOf(r), key = lan + "|" + method;
       if (!batches.has(key)) batches.set(key, { id: newId(), lan: lan, method: method });
       total += tien;
@@ -146,7 +145,6 @@ function createUpUncFile(selectedIds, opts) {
         nd, "", "", "", "", UNC_CFG.BEN_CHIU_PHI, tkThuPhi, effDate, batches.get(key).id, newId()
       ]);
     });
-    if (countTrong > 0) warnings.push(countTrong + " khoản người nhận tại BIDV được ghi là \"" + UNC_CFG.PHUONG_THUC_TRONG + "\" - hãy kiểm tra đúng nội dung phương thức theo mẫu của ngân hàng.");
     if (!body.length) return { success: false, message: "Không có dòng hợp lệ để xuất.", warnings: warnings };
 
     const fileName = "UP_UNC (" + Utilities.formatDate(today, CFG.TZ, "dd-MM-yyyy HHmm") + ")";
