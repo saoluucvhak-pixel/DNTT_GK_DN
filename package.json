@@ -1,0 +1,14 @@
+{
+  "name": "dntt-gk-dn",
+  "private": true,
+  "description": "Quản lý thanh toán HAK (Google Apps Script web app) - kiểm tra tự động",
+  "scripts": {
+    "test:syntax": "node tests/check-syntax.js",
+    "test:unit": "node --test tests/unit.test.js",
+    "test:ui": "node tests/ui.test.js",
+    "test": "npm run test:syntax && npm run test:unit && npm run test:ui"
+  },
+  "devDependencies": {
+    "playwright": "1.49.1"
+  }
+}

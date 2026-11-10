@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Kiểm tra cú pháp (.gs, Index.html)
+        run: node tests/check-syntax.js
+
+      - name: Kiểm thử đơn vị
+        run: node --test tests/unit.test.js
+
+      - name: Cài Playwright (chromium)
+        run: |
+          npm install --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+
+      - name: Kiểm thử giao diện (headless)
+        run: node tests/ui.test.js
