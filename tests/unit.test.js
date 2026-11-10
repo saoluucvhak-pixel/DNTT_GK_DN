@@ -8,9 +8,9 @@ const read = f => fs.readFileSync(path.join(root, f), 'utf8');
 
 // Chỉ lấy phần trước doGet của Code.gs (CFG, utils, sysLock) + Banks.gs + Unc.gs
 const src = read('Code.gs').split('function doGet')[0] + read('Banks.gs') + read('Unc.gs') +
-  ';return { CFG, utils, findBankFull, _cleanAccount, getUncDefaults };';
+  ';return { CFG, utils, findBankFull, _cleanAccount, getUncDefaults, _uncMethod, UNC_CFG };';
 const stubs = { Utilities: { formatDate: () => '' }, LockService: {} };
-const { CFG, utils, findBankFull, _cleanAccount, getUncDefaults } =
+const { CFG, utils, findBankFull, _cleanAccount, getUncDefaults, _uncMethod, UNC_CFG } =
   new Function(...Object.keys(stubs), src)(...Object.values(stubs));
 
 test('parseNum: số kiểu Việt Nam và kiểu US', () => {
@@ -56,4 +56,13 @@ test('cấu hình tài khoản: có trích nợ và thu phí', () => {
   assert.match(CFG.TK_TRICH_NO, /^\d{6,25}$/);
   assert.match(CFG.TK_THU_PHI, /^\d{6,25}$/);
   assert.deepStrictEqual(getUncDefaults(), { tkTrichNo: CFG.TK_TRICH_NO, tkThuPhi: CFG.TK_THU_PHI });
+});
+
+test('phương thức chuyển: BIDV là chuyển trong, ngân hàng khác là chuyển ngoài', () => {
+  assert.strictEqual(_uncMethod(findBankFull('BIDV')), UNC_CFG.PHUONG_THUC_TRONG);
+  assert.strictEqual(_uncMethod(findBankFull('bidv quảng nam')), UNC_CFG.PHUONG_THUC_TRONG);
+  assert.strictEqual(_uncMethod(findBankFull('Đầu tư và phát triển')), UNC_CFG.PHUONG_THUC_TRONG);
+  assert.strictEqual(_uncMethod(findBankFull('Vietcombank')), UNC_CFG.PHUONG_THUC_NGOAI);
+  assert.strictEqual(_uncMethod(findBankFull('Agribank')), UNC_CFG.PHUONG_THUC_NGOAI);
+  assert.strictEqual(_uncMethod(''), UNC_CFG.PHUONG_THUC_NGOAI);
 });
