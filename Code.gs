@@ -11,18 +11,39 @@ const CFG = {
   DNTT_112: "DNTT_GK_DN_112",
   PC_SHEET: "PhieuCan_DN",
   SPLIT_COL: "Số phiếu cân",
-  LAN_TT: "Lanthanhtoan"
+  LAN_TT: "Lanthanhtoan",
+  TZ: "Asia/Ho_Chi_Minh",
+  TK_TRICH_NO: "8619299999", // Tài khoản trích nợ (dùng cho file ngân hàng và UNC)
+  TK_THU_PHI: "8619299999"   // Tài khoản thu phí (UNC) - sửa nếu khác tài khoản trích nợ
 };
 
 
 const utils = {
   standardize: (v) => v ? String(v).replace(/\s+/g, '').toUpperCase().trim() : "",
-  formatDate: (d) => (d instanceof Date && d.getFullYear() > 1900) ? Utilities.formatDate(d, "GMT+7", "dd/MM/yyyy") : (d ? String(d) : ""),
+  formatDate: (d) => (d instanceof Date && d.getFullYear() > 1900) ? Utilities.formatDate(d, CFG.TZ, "dd/MM/yyyy") : (d ? String(d) : ""),
+  // Hiểu cả số kiểu VN (1.234.567,89) lẫn kiểu US (1,234,567.89)
   parseNum: (v) => {
     if (typeof v === 'number') return isNaN(v) ? 0 : v;
     if (!v) return 0;
-    let n = parseFloat(String(v).replace(/[^0-9.-]+/g, ""));
-    return isNaN(n) ? 0 : n;
+    let str = String(v).replace(/[^0-9.,-]+/g, "");
+    const neg = str.charAt(0) === "-";
+    str = str.replace(/-/g, "");
+    const lastDot = str.lastIndexOf("."), lastComma = str.lastIndexOf(",");
+    const cntDot = (str.match(/\./g) || []).length, cntComma = (str.match(/,/g) || []).length;
+    let decSep = "";
+    if (lastDot >= 0 && lastComma >= 0) decSep = lastDot > lastComma ? "." : ",";
+    else if (cntDot > 1 || cntComma > 1) decSep = "";            // nhiều dấu giống nhau => ngăn cách nghìn
+    else if (lastDot >= 0) decSep = (str.length - lastDot - 1 === 3) ? "" : ".";
+    else if (lastComma >= 0) decSep = (str.length - lastComma - 1 === 3) ? "" : ",";
+    if (decSep) {
+      const idx = str.lastIndexOf(decSep);
+      str = str.slice(0, idx).replace(/[.,]/g, "") + "." + str.slice(idx + 1);
+    } else {
+      str = str.replace(/[.,]/g, "");
+    }
+    let n = parseFloat(str);
+    if (isNaN(n)) return 0;
+    return neg ? -n : n;
   }
 };
 
@@ -39,7 +60,7 @@ const sysLock = {
 };
 
 function doGet(e) {
-  if (e.parameter.action) {
+  if (e && e.parameter && e.parameter.action) {
     let action = e.parameter.action;
     let result = "";
     try {
@@ -64,13 +85,13 @@ function get112ViewData(fDate, tDate) {
   const filtered = data.filter(r => {
     let d = r[16]; // Cột Q
     if (!(d instanceof Date)) return false;
-    let iso = Utilities.formatDate(d, "GMT+7", "yyyy-MM-dd");
+    let iso = Utilities.formatDate(d, CFG.TZ, "yyyy-MM-dd");
     return (!fDate || iso >= fDate) && (!tDate || iso <= tDate);
   });
   return filtered.map(r => ({
     idHeThong: String(r[0] || ""),
     ngayDN: utils.formatDate(r[16]),
-    ngayISO: Utilities.formatDate(r[16], "GMT+7", "yyyy-MM-dd"),
+    ngayISO: Utilities.formatDate(r[16], CFG.TZ, "yyyy-MM-dd"),
     soLan: String(r[18] || ""),
     chuRung: String(r[2] || ""),
     nguoiNhan: String(r[3] || ""),
@@ -90,13 +111,13 @@ function getMainTableData(fDate, tDate) {
   const filtered = data.filter(r => {
     let d = r[11]; // Cột L
     if (!(d instanceof Date)) return false;
-    let iso = Utilities.formatDate(d, "GMT+7", "yyyy-MM-dd");
+    let iso = Utilities.formatDate(d, CFG.TZ, "yyyy-MM-dd");
     return (!fDate || iso >= fDate) && (!tDate || iso <= tDate);
   });
   return filtered.map(r => ({
     idHeThong: String(r[0] || ""),
     ngayDN: utils.formatDate(r[11]),
-    ngayISO: Utilities.formatDate(r[11], "GMT+7", "yyyy-MM-dd"),
+    ngayISO: Utilities.formatDate(r[11], CFG.TZ, "yyyy-MM-dd"),
     nguoiDN: String(r[5] || ""),
     chuRung: String(r[3] || ""),
     nguoiNhan: String(r[7] || ""),
@@ -112,13 +133,12 @@ function getMainTableData(fDate, tDate) {
 // NÚT 6: TẠO BÁO CÁO & SHEET NGÂN HÀNG
 // ============================================================
 function createFinalReportFromFilteredData(filteredRows, dateRange) {
+  let newSS = null;
   try {
     const folder = DriveApp.getFolderById(CFG.FOLDER_REPORT_ID);
-    const fileName = "BÁO CÁO ĐNTT (" + dateRange + ") - " + Utilities.formatDate(new Date(), "GMT+7", "HHmm");
-    const newSS = SpreadsheetApp.create(fileName);
-    const file = DriveApp.getFileById(newSS.getId());
-    folder.addFile(file);
-    DriveApp.getRootFolder().removeFile(file);
+    const fileName = "BÁO CÁO ĐNTT (" + dateRange + ") - " + Utilities.formatDate(new Date(), CFG.TZ, "HHmm");
+    newSS = SpreadsheetApp.create(fileName);
+    DriveApp.getFileById(newSS.getId()).moveTo(folder);
 
     const sheet1 = newSS.getSheets()[0];
     sheet1.setName("DeNghiThanhToanCK");
@@ -129,6 +149,7 @@ function createFinalReportFromFilteredData(filteredRows, dateRange) {
 
     return { success: true, url: newSS.getUrl() };
   } catch (e) {
+    if (newSS) { try { DriveApp.getFileById(newSS.getId()).setTrashed(true); } catch (x) {} }
     return { success: false, message: e.toString() };
   }
 }
@@ -174,50 +195,47 @@ function renderSheet1Full(sheet, filteredRows, dateRange) {
 // ============================================================
 // SHEET 2: CHI TIẾT VÀ ĐỊNH DẠNG TIME/NUMBER
 // ============================================================
-function renderSheet2Detail(sheet, filteredRows, dateRange) {
+/** Gom dữ liệu chi tiết (phiếu cân + hợp đồng) của các hồ sơ đã lọc - dùng chung cho Sheet 2 và File ngân hàng */
+function collectDetailRows_(filteredRows) {
   const ss = SpreadsheetApp.getActive();
   const idSet = new Set(filteredRows.map(r => r.idHeThong));
-  const shCT = ss.getSheetByName(CFG.DNTT_CT);
-  const ctData = shCT.getDataRange().getValues();
-  
-  // Kết nối các file ngoại vi
-  const ssPC = SpreadsheetApp.openById(CFG.PC_SS_ID);
-  const pcData = ssPC.getSheetByName(CFG.PC_SHEET).getDataRange().getValues();
-  const ssHD = SpreadsheetApp.openById(CFG.HD_SS_ID);
-  const hdData = ssHD.getSheetByName("HD_NCC").getDataRange().getValues();
-  const ssNH = SpreadsheetApp.openById(CFG.UPDATE_NH_SS_ID);
-  const shUpdateNH = ssNH.getSheetByName("Update_NganHang_DN");
-  
+  const mapParent = new Map(filteredRows.map(r => [r.idHeThong, r]));
+  const ctData = ss.getSheetByName(CFG.DNTT_CT).getDataRange().getValues();
+  const pcData = SpreadsheetApp.openById(CFG.PC_SS_ID).getSheetByName(CFG.PC_SHEET).getDataRange().getValues();
+  const hdData = SpreadsheetApp.openById(CFG.HD_SS_ID).getSheetByName("HD_NCC").getDataRange().getValues();
   const mapPC = new Map(pcData.slice(1).map(r => [utils.standardize(r[22]), r]));
   const mapHD = new Map(hdData.slice(1).map(r => [utils.standardize(r[2]), r]));
+
+  const tempRows = [];
+  ctData.slice(1).forEach(ctRow => {
+    let parentId = String(ctRow[1]).trim();
+    if (!idSet.has(parentId)) return;
+    let pc = mapPC.get(utils.standardize(ctRow[11])) || new Array(30).fill("");
+    let hd = mapHD.get(utils.standardize(ctRow[19])) || new Array(30).fill("");
+    let parentInfo = mapParent.get(parentId);
+    tempRows.push({
+      data: [
+        0, parentInfo?.soLan, "'" + ctRow[11], utils.formatDate(ctRow[20]), utils.formatDate(pc[1]),
+        pc[13], "'" + ctRow[19], pc[5], ctRow[3], "'" + (hd[6]||""), hd[10], "'" + (hd[11]||""),
+        hd[5], hd[18], pc[2], pc[4], utils.parseNum(pc[7]), utils.parseNum(pc[8]),
+        utils.parseNum(pc[9]), utils.parseNum(pc[9])/1000, utils.parseNum(pc[23]),
+        utils.parseNum(pc[25]), pc[14], hd[16], "'" + (hd[15]||""), ctRow[2]
+      ],
+      bank: { ngayCK: utils.formatDate(ctRow[20]), soPhieuCan: ctRow[11], noiDung: parentInfo?.noiDungCK, thanhTien: ctRow[16], soHD: ctRow[19], hd: hd }
+    });
+  });
+  return tempRows;
+}
+
+function renderSheet2Detail(sheet, filteredRows, dateRange) {
+  const tempRows = collectDetailRows_(filteredRows);
 
   sheet.clear();
   sheet.getRange("A1:Z1").merge().setValue("BẢNG KÊ CHI TIẾT CHUYỂN KHOẢN").setFontSize(16).setFontWeight("bold").setHorizontalAlignment("center");
   sheet.getRange("A2:Z2").merge().setValue("Thời gian: " + dateRange).setFontStyle("italic").setHorizontalAlignment("center");
-  
+
   const headers = ["STT", "Lần TT", "Số phiếu cân", "Ngày CK", "Ngày nhập", "Đại lý", "Số hợp đồng", "Số xe", "Họ tên chủ rừng", "CCCD Chủ rừng", "Tên người thụ hưởng", "CCCD Người thụ hưởng", "Địa chỉ Chủ rừng", "Địa chỉ rừng", "Giờ vào", "Giờ ra", "KL hàng + xe", "Bì", "KL_KG", "KL_Tấn", "Đơn giá", "Thành tiền", "Nguồn gốc", "Ngân hàng", "Số tài khoản", "Thời gian nhập liệu"];
   sheet.getRange(4, 1, 1, headers.length).setValues([headers]).setBackground("#cfe2f3").setFontWeight("bold").setBorder(true, true, true, true, true, true).setHorizontalAlignment("center");
-
-  let tempRows = []; 
-  ctData.slice(1).forEach(ctRow => {
-    let parentId = String(ctRow[1]).trim();
-    if (idSet.has(parentId)) {
-      let pc = mapPC.get(utils.standardize(ctRow[11])) || new Array(30).fill("");
-      let hd = mapHD.get(utils.standardize(ctRow[19])) || new Array(30).fill("");
-      let parentInfo = filteredRows.find(f => f.idHeThong === parentId);
-
-      tempRows.push({
-        data: [
-          0, parentInfo?.soLan, "'" + ctRow[11], utils.formatDate(ctRow[20]), utils.formatDate(pc[1]), 
-          pc[13], "'" + ctRow[19], pc[5], ctRow[3], "'" + (hd[6]||""), hd[10], "'" + (hd[11]||""), 
-          hd[5], hd[18], pc[2], pc[4], utils.parseNum(pc[7]), utils.parseNum(pc[8]), 
-          utils.parseNum(pc[9]), utils.parseNum(pc[9])/1000, utils.parseNum(pc[23]), 
-          utils.parseNum(pc[25]), pc[14], hd[16], "'" + (hd[15]||""), ctRow[2]
-        ],
-        bank: { ngayCK: utils.formatDate(ctRow[20]), soPhieuCan: ctRow[11], noiDung: parentInfo?.noiDungCK, thanhTien: ctRow[16], soHD: ctRow[19], hd: hd }
-      });
-    }
-  });
 
   if (tempRows.length > 0) {
     let finalRows = tempRows.map((item, index) => { item.data[0] = index + 1; return item.data; });
@@ -237,38 +255,81 @@ function renderSheet2Detail(sheet, filteredRows, dateRange) {
     sheet.getRange(totalRow, 20).setFormulaR1C1(`=SUM(R5C:R[-1]C)`);
     sheet.getRange(totalRow, 22).setFormulaR1C1(`=SUM(R5C:R[-1]C)`);
     sheet.getRange(totalRow, 1, 1, headers.length).setBackground("#fff2cc").setBorder(true, true, true, true, true, true);
-
-    // --- XỬ LÝ FILE UPDATE NGÂN HÀNG (XÓA VÀ GHI MỚI) ---
-    if (shUpdateNH) {
-      // Xóa toàn bộ dữ liệu cũ từ dòng 2
-      if (shUpdateNH.getLastRow() > 1) {
-        shUpdateNH.getRange(2, 1, shUpdateNH.getLastRow(), 33).clearContent();
-      }
-      
-      let bankUpdateRows = tempRows.map(item => {
-        let b = item.bank;
-        let row = new Array(33).fill("");
-        row[0] = ""; // Cột A bỏ trống
-        row[1] = 0;       // Cột B: Giá trị mặc định là 0 (Số nguyên)
-        row[2] = b.ngayCK; // Ngày hạch toán (Lấy từ ngày chốt)
-        row[3] = b.ngayCK; // Ngày chứng từ
-        row[4] = "'" + b.soPhieuCan;
-        row[5] = "'8619299999"; row[6] = "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam - Quảng Nam - VND"; row[7] = 43;
-        row[8] = b.noiDung || ("Thanh toán phiếu cân " + b.soPhieuCan); // Cột I diễn giải
-        row[9] = "'" + String(b.hd[6] || ""); row[10] = b.hd[4]; row[11] = b.hd[5];
-        row[12] = "'" + String(b.hd[15] || ""); row[13] = b.hd[16]; row[14] = b.hd[10];
-        row[15] = "'" + String(b.hd[11] || ""); row[19] = "VND"; row[21] = b.noiDung; 
-        row[22] = "33111"; row[23] = "1121"; row[24] = b.thanhTien; row[32] = "'" + b.soHD;
-        return row;
-      });
-      shUpdateNH.getRange(2, 1, bankUpdateRows.length, 33).setValues(bankUpdateRows);
-    }
   }
 }
 
+/** Xuất đúng 1 sheet ra blob .xlsx (qua bảng tính tạm, xóa sau khi xuất) */
+function exportSheetToXlsx_(sheet, fileName) {
+  const tmp = SpreadsheetApp.create(fileName);
+  try {
+    const copied = sheet.copyTo(tmp);
+    copied.setName(sheet.getName());
+    tmp.deleteSheet(tmp.getSheets()[0]); // bỏ sheet mặc định
+    SpreadsheetApp.flush();
+    const resp = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + tmp.getId() + "/export?format=xlsx", {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    if (resp.getResponseCode() !== 200) throw new Error("Không xuất được file Excel (HTTP " + resp.getResponseCode() + ").");
+    return resp.getBlob().setName(fileName);
+  } finally {
+    try { DriveApp.getFileById(tmp.getId()).setTrashed(true); } catch (x) {}
+  }
+}
 
+// ============================================================
+// NÚT 4: FILE NGÂN HÀNG (XÓA VÀ GHI MỚI sheet Update_NganHang_DN)
+// ============================================================
+function updateBankFile(filteredRows) {
+  const lock = sysLock.acquire();
+  try {
+    const tempRows = collectDetailRows_(filteredRows || []);
+    if (!tempRows.length) return { success: false, message: "Không có dữ liệu chi tiết để ghi file ngân hàng." };
 
+    const ssNH = SpreadsheetApp.openById(CFG.UPDATE_NH_SS_ID);
+    const shUpdateNH = ssNH.getSheetByName("Update_NganHang_DN");
+    if (!shUpdateNH) return { success: false, message: "Không tìm thấy sheet Update_NganHang_DN." };
 
+    // Xóa toàn bộ dữ liệu cũ từ dòng 2
+    if (shUpdateNH.getLastRow() > 1) {
+      shUpdateNH.getRange(2, 1, shUpdateNH.getLastRow() - 1, 33).clearContent();
+    }
+
+    const bankUpdateRows = tempRows.map(item => {
+      let b = item.bank;
+      let row = new Array(33).fill("");
+      row[0] = ""; // Cột A bỏ trống
+      row[1] = 0;       // Cột B: Giá trị mặc định là 0 (Số nguyên)
+      row[2] = b.ngayCK; // Ngày hạch toán (Lấy từ ngày chốt)
+      row[3] = b.ngayCK; // Ngày chứng từ
+      row[4] = "'" + b.soPhieuCan;
+      row[5] = "'" + CFG.TK_TRICH_NO; row[6] = "Ngân hàng TMCP Đầu tư và Phát triển Việt Nam - Quảng Nam - VND"; row[7] = 43;
+      row[8] = b.noiDung || ("Thanh toán phiếu cân " + b.soPhieuCan); // Cột I diễn giải
+      row[9] = "'" + String(b.hd[6] || ""); row[10] = b.hd[4]; row[11] = b.hd[5];
+      row[12] = "'" + String(b.hd[15] || ""); row[13] = b.hd[16]; row[14] = b.hd[10];
+      row[15] = "'" + String(b.hd[11] || ""); row[19] = "VND"; row[21] = b.noiDung;
+      row[22] = "33111"; row[23] = "1121"; row[24] = b.thanhTien; row[32] = "'" + b.soHD;
+      return row;
+    });
+    shUpdateNH.getRange(2, 1, bankUpdateRows.length, 33).setValues(bankUpdateRows);
+    SpreadsheetApp.flush();
+
+    // Xuất riêng sheet Update_NganHang_DN ra file Excel, lưu vào thư mục báo cáo
+    const fileName = "UPDATE_NGANHANG (" + Utilities.formatDate(new Date(), CFG.TZ, "dd-MM-yyyy HHmm") + ").xlsx";
+    const blob = exportSheetToXlsx_(shUpdateNH, fileName);
+    const xlsxFile = DriveApp.getFolderById(CFG.FOLDER_REPORT_ID).createFile(blob);
+    return {
+      success: true,
+      count: bankUpdateRows.length,
+      fileName: fileName,
+      fileUrl: xlsxFile.getUrl(),
+      downloadUrl: "https://drive.google.com/uc?export=download&id=" + xlsxFile.getId(),
+      base64: Utilities.base64Encode(blob.getBytes())
+    };
+  } catch (e) {
+    return { success: false, message: e.toString() };
+  } finally { lock.releaseLock(); }
+}
 
 // ============================================================
 // NÚT 8: CHỐT THANH TOÁN (KHÓA DỮ LIỆU ĐA TẦNG)
@@ -282,22 +343,32 @@ function runConfirmPayment(selectedIds, payDateStr) {
     const sh112 = ss.getSheetByName(CFG.DNTT_112);
     const shPC = SpreadsheetApp.openById(CFG.PC_SS_ID).getSheetByName(CFG.PC_SHEET);
     
-    const p = payDateStr.split('/'), 
-          prefixP = p[2] + p[1].padStart(2, '0') + p[0].padStart(2, '0'), 
-          dateForSheet = p[1] + "/" + p[0] + "/" + p[2];
-    
-    const idSet = new Set(selectedIds.map(id => String(id).trim()));
+    const m = String(payDateStr || "").trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (!m) throw new Error("Ngày thanh toán không hợp lệ. Định dạng đúng: dd/mm/yyyy.");
+    const dd = m[1].padStart(2, '0'), mm = m[2].padStart(2, '0'), yyyy = m[3];
+    const chk = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+    if (chk.getFullYear() != yyyy || chk.getMonth() != Number(mm) - 1 || chk.getDate() != Number(dd)) {
+      throw new Error("Ngày thanh toán không tồn tại: " + payDateStr);
+    }
+    const prefixP = yyyy + mm + dd;
+    const dateForSheet = new Date(Number(yyyy), Number(mm) - 1, Number(dd)); // Date thật, không phụ thuộc locale
+
+    const requestedIds = new Set(selectedIds.map(id => String(id).trim()));
+    const idSet = new Set(); // chỉ gồm hồ sơ CHƯA chốt
+    let skipped = 0;
 
     // 1. XỬ LÝ MẢNG 112
     const data112 = sh112.getRange(1, 1, sh112.getLastRow(), sh112.getLastColumn()).getValues();
     const mapSoLan = new Map();
     for (let k = 1; k < data112.length; k++) {
       let id = String(data112[k][0]).trim();
-      if (idSet.has(id)) { 
-        data112[k][20] = "Y"; 
-        mapSoLan.set(id, String(data112[k][18]).trim()); 
-      }
+      if (!requestedIds.has(id)) continue;
+      if (String(data112[k][20]).trim().toUpperCase() === "Y") { skipped++; continue; } // đã chốt trước đó
+      data112[k][20] = "Y";
+      idSet.add(id);
+      mapSoLan.set(id, String(data112[k][18]).trim());
     }
+    if (idSet.size === 0) return "⚠️ Không có hồ sơ nào cần chốt (" + skipped + " hồ sơ đã được chốt trước đó).";
 
     // 2. XỬ LÝ MẢNG NGUỒN
     const dataSrc = shSrc.getRange(1, 1, shSrc.getLastRow(), shSrc.getLastColumn()).getValues();
@@ -335,7 +406,7 @@ function runConfirmPayment(selectedIds, payDateStr) {
     shPC.getRange(1, 1, dataPC.length, dataPC[0].length).setValues(dataPC);
 
     SpreadsheetApp.flush(); 
-    return `✅ Đã chốt thành công ${idSet.size} hồ sơ & khóa Phiếu Cân!`;
+    return `✅ Đã chốt thành công ${idSet.size} hồ sơ & khóa Phiếu Cân!` + (skipped ? ` (Bỏ qua ${skipped} hồ sơ đã chốt trước đó)` : "");
   } catch (e) { 
     return "❌ Lỗi: " + e.toString(); 
   } finally { if (lock) lock.releaseLock(); }
@@ -345,6 +416,11 @@ function runConfirmPayment(selectedIds, payDateStr) {
  * NÚT 1: TÁCH PHIẾU CHI TIẾT (BẢN FIX LỖI CỘT L -> V VÀ TRẠNG THÁI Y)
  */
 function runProcessDetail() {
+  const lock = sysLock.acquire();
+  try { return _runProcessDetail(); } finally { lock.releaseLock(); }
+}
+
+function _runProcessDetail() {
   const ss = SpreadsheetApp.getActive();
   const shSrc = ss.getSheetByName(CFG.DNTT_SRC);
   const shCT = ss.getSheetByName(CFG.DNTT_CT);
@@ -361,6 +437,9 @@ function runProcessDetail() {
   let countAdd = 0;
   let countUpdate = 0;
 
+  const splitIdx = srcData[0].indexOf(CFG.SPLIT_COL);
+  if (splitIdx < 0) return "❌ Không tìm thấy cột \"" + CFG.SPLIT_COL + "\" trong sheet " + CFG.DNTT_SRC;
+
   for (let i = 1; i < srcData.length; i++) {
     let r = srcData[i];
     let idKey = String(r[0]).trim();
@@ -370,8 +449,10 @@ function runProcessDetail() {
     let ngayDeNghiNguon = r[11]; 
 
     // CHỈ XỬ LÝ NẾU CHƯA CHỐT (KHÁC Y VÀ KHÁC ĐÓNG TT)
-    if (String(r[17]).toUpperCase() !== "Y" && String(r[14]) !== "Đóng TT") {
-      let listPC = String(r[srcData[0].indexOf(CFG.SPLIT_COL)] || "").split(/[,;|]/).map(x => x.trim()).filter(Boolean);
+    // Cũng bỏ qua hồ sơ đã lên 112 ("Đã ĐNTT") để không lùi trạng thái
+    if (String(r[17]).toUpperCase() !== "Y" && String(r[14]) !== "Đóng TT" && String(r[14]) !== "Đã ĐNTT") {
+      let listPC = String(r[splitIdx] || "").split(/[,;|]/).map(x => x.trim()).filter(Boolean);
+      if (listPC.length === 0) continue; // không có phiếu cân => không đánh dấu trạng thái
       
       listPC.forEach((soP, idx) => {
         let newID = idKey + "-" + (idx + 1);
@@ -429,7 +510,7 @@ function runProcessDetail() {
   }
 
   if (countAdd > 0 || countUpdate > 0) {
-    if (shCT.getLastRow() > 1) shCT.getRange(2, 1, shCT.getLastRow() - 1, 22).clearContent();
+    // Không clear trước khi ghi: số dòng chỉ tăng, tránh mất dữ liệu nếu lỗi giữa chừng
     shCT.getRange(2, 1, currentCTRows.length, 22).setValues(currentCTRows);
     shSrc.getRange(1, 1, srcData.length, srcData[0].length).setValues(srcData);
     shPC.getRange(1, 1, pcValues.length, pcValues[0].length).setValues(pcValues);
@@ -445,6 +526,11 @@ function runProcessDetail() {
  * NÚT 2: TỔNG HỢP 112 (BẢN HOÀN THIỆN DIỄN GIẢI CỘT P)
  */
 function runCreate112() {
+  const lock = sysLock.acquire();
+  try { return _runCreate112(); } finally { lock.releaseLock(); }
+}
+
+function _runCreate112() {
   const ss = SpreadsheetApp.getActive();
   const shSrc = ss.getSheetByName(CFG.DNTT_SRC);
   const sh112 = ss.getSheetByName(CFG.DNTT_112);
@@ -507,7 +593,7 @@ function runCreate112() {
     let soHD = String(data112[i][8] || "").replace(/'/g, "");
     let hdKey = utils.standardize(soHD);
     let ngayHDRaw = data112[i][9];
-    let ngayHDFmt = (ngayHDRaw instanceof Date) ? Utilities.formatDate(ngayHDRaw, "GMT+7", "dd.MM.yyyy") : String(ngayHDRaw || "");
+    let ngayHDFmt = (ngayHDRaw instanceof Date) ? Utilities.formatDate(ngayHDRaw, CFG.TZ, "dd.MM.yyyy") : String(ngayHDRaw || "");
 
     // A. Lọc dữ liệu chi tiết của riêng hồ sơ này
     let currentDetails = ctGroupedById[id] || [];
@@ -577,21 +663,9 @@ function runCreate112() {
 }
 
 function onOpen() {
-  var ui = SpreadsheetApp.getUi();
-  ui.createMenu('🚀 QUẢN LÝ HAK') // Tên Menu chính
+  SpreadsheetApp.getUi().createMenu('🚀 QUẢN LÝ HAK')
       .addItem('1. Tách Phiếu Chi Tiết', 'runProcessDetail')
       .addItem('2. Tổng Hợp 112', 'runCreate112')
-      .addSeparator() // Đường kẻ ngăn cách
-      .addItem('3. Chốt Thanh Toán', 'showPayDialog') // Gọi một hàm mở thông báo
       .addToUi();
-}
-
-// Hàm phụ để mở hộp thoại nhập ngày nếu cần
-function showPayDialog() {
-  var ui = SpreadsheetApp.getUi();
-  var result = ui.prompt('Xác nhận chốt', 'Nhập ngày thanh toán (dd/mm/yyyy):', ui.ButtonSet.OK_CANCEL);
-  if (result.getSelectedButton() == ui.Button.OK) {
-    // Gọi hàm runConfirmPayment với dữ liệu từ prompt
-    // Ví dụ: runConfirmPayment(selectedIds, result.getResponseText());
-  }
+  // Chốt thanh toán thực hiện trên giao diện web (cần chọn danh sách hồ sơ).
 }
