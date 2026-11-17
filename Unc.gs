@@ -9,6 +9,7 @@ const UNC_CFG = {
   PHUONG_THUC_TRONG: "I - Chuyển trong BIDV",   // người nhận tại BIDV (nội dung chuẩn theo ngân hàng)
   LOAI_TIEN: "VND",
   BEN_CHIU_PHI: "O - Bên chuyển",
+  GHI_ID_UNC: false, // true = ghi thêm 2 cột cuối ID_UNC (Q), ID_UNCCT (R); false = file UP_UNC chỉ gồm các cột theo mẫu ngân hàng (A-P)
   HEADERS: ["STT", "PhuongThucChuyenTien", "TkTrichNo", "TenNguoiHuong", "SoTKNguoiHuong", "NganHangHuong", "SoTien", "LoaiTien", "NoiDung", "A", "B", "C", "D", "BenChiuPhi", "TaiKhoanThuPhi", "NgayHieuLuc", "ID_UNC", "ID_UNCCT"],
   TH_HEADERS: ["ID_UNC", "Ngày", "PhuongThucChuyenTien", "TaiKhoanTrichNo", "LoaiTien", "TKThuPhi", "LanTT", "BenChiuPhi"]
 };
@@ -154,10 +155,13 @@ function createUpUncFile(selectedIds, opts) {
     const ensureRows = (sh, need) => { const mr = sh.getMaxRows(); if (mr < need) sh.insertRowsAfter(mr, need - mr); };
 
     // --- UP_UNC: giữ 3 dòng tiêu đề của mẫu, ghi dữ liệu từ dòng 4 ---
-    const nCol = UNC_CFG.HEADERS.length;
-    if (sh1.getLastRow() >= 4) sh1.getRange(4, 1, sh1.getLastRow() - 3, nCol).clearContent();
+    const nAll = UNC_CFG.HEADERS.length;                       // 18 cột (A-R)
+    const nCol = UNC_CFG.GHI_ID_UNC ? nAll : nAll - 2;          // 16 cột (A-P) nếu không ghi 2 cột ID
+    // Luôn xóa cả 2 cột ID của lần xuất trước
+    if (sh1.getLastRow() >= 4) sh1.getRange(4, 1, sh1.getLastRow() - 3, nAll).clearContent();
+    if (nCol < nAll) body.forEach((row, i) => { body[i] = row.slice(0, nCol); });
     ensureRows(sh1, 3 + body.length);
-    const textCols = [1, 2, 3, 4, 5, 6, 8, 9, 14, 15, 17, 18];
+    const textCols = [1, 2, 3, 4, 5, 6, 8, 9, 14, 15, 17, 18].filter(c => c <= nCol);
     textCols.forEach(c => sh1.getRange(4, c, body.length, 1).setNumberFormat("@"));
     sh1.getRange(4, 1, body.length, nCol).setValues(body);
     sh1.getRange(4, 7, body.length, 1).setNumberFormat("#,##0");

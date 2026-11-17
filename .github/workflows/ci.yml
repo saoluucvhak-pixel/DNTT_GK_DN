@@ -22,7 +22,7 @@ jobs:
         run: node tests/check-syntax.js
 
       - name: Kiểm thử đơn vị
-        run: node --test tests/unit.test.js
+        run: node --test tests/unit.test.js tests/unc-export.test.js
 
       - name: Cài Playwright (chromium)
         run: |
